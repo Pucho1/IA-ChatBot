@@ -1,0 +1,38 @@
+{
+  "id": "chatcmpl-D1e5EQWem1PIx0P8SughBqf7rAYLS",
+  "object": "chat.completion",
+  "created": 1769284780,
+  "model": "gpt-4o-mini-2024-07-18",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "¡Claro! ¡Hola! ¿Cómo estás?",
+        "refusal": null,
+        "annotations": []
+      },
+      "logprobs": null,
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 26,
+    "completion_tokens": 10,
+    "total_tokens": 36,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "service_tier": "default",
+  "system_fingerprint": "fp_29330a9688",
+  "_request_id": "req_9a3aeb7534d043f39d911393db151428"
+}
+
