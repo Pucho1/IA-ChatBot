@@ -17,20 +17,6 @@ export async function POST(req) {
     temperature: 0.7,
   });
 
-
-
-
-  // const response = streamText({
-  //   model: "gpt-4o-mini",
-  //   stream: true,
-  //   messages: [
-  //     { role: "system", content: "Eres un asistente útil." },
-  //     { role: "user", content: "¿Puedes saludarme en español?" },
-  //   ],
-  // })
-
-  console.log(response);
-
   return Response.json({
     content: response.choices[0].message.content,
   });

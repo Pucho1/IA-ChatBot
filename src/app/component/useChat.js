@@ -21,7 +21,7 @@ const useChat = () => {
 
 		setMessages((prevMessages) => [...prevMessages, userMessage]);
 		setInput("");
-    setLoading(true);
+    	setLoading(true);
 
 		// hago fetch y quedo a la espera de una respuesta, pero no de una respuesta cerrada (JSON), sino de una conexión abierta.
 		// El servidor envía un trozo de datos al navegador. El navegador lo guarda en un buffer (una memoria temporal).
@@ -31,15 +31,15 @@ const useChat = () => {
 				"Content-Type": "application/json",
 			},
 			body: JSON.stringify({
-				messages: [...messages, userMessage]
+				messages: input,
 			}),
 		});
 
-		// creamos el lector del stream de la respuesta( "objeto de tipo ReadableStream" )  al cual le llegaran 
+		// creamos el lector del stream de la respuesta( "objeto de tipo ReadableStream" )  al cual le llegaran
 		// datos poco a poco segun los envie el servidor con el enqueue el controller redeablestream
 		const reader = response.body.getReader();
 		
-    const decoder = new TextDecoder(); // Para convertir bytes a texto
+    	const decoder = new TextDecoder(); // Para convertir bytes a texto
 
 		let assistantText = "";
 
@@ -54,10 +54,10 @@ const useChat = () => {
 
 
 			const chunk = decoder.decode(value); // Decodificamos el binario a texto
-      assistantText += chunk; // Acumulamos el texto recibido hasta ahora asi hace el efecto "streaming"
+      		assistantText += chunk; // Acumulamos el texto recibido hasta ahora asi hace el efecto "streaming"
 
 			setMessages(prev => {
-				const last = prev[prev.length - 1];  // Obtengo el último mensaje (que debería ser del asistente)
+				const last = prev[prev.length - 1];  // Obtengo el último mensaje (que debería ser del asistente si ya el stream habia metido algo	)
 
 				if (last?.role === "assistant") { // Si el último mensaje es del asistente, le añado el nuevo texto
 					return [...prev.slice(0, -1), {...last,  content: assistantText }];
@@ -68,6 +68,8 @@ const useChat = () => {
 		}
 		setLoading(false);
 	};
+
+	console.log("useChat messages:", messages);
   
   return {
 		input,

@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 
 import { rateLimit } from "@/app/helpers/retaeLimits";
+import { summarizeConversation } from "@/app/helpers/summarizeConversation";
 
 // Inicializo el cliente de OpenAI creando una instancia de la clase OpenAI 
 // a la cual le paso la clave de API desde las variables de entorno
@@ -10,23 +11,51 @@ const client = new OpenAI({
 });
 
 const MAX_MESSAGES = 10;
+const memoryStore  = new Map();
+
 
 export async function POST(req) {
 
 	// Obtengo la IP del cliente desde los headers de la petición
-	const ip        = req.headers.get("x-forwarded-for") || "unknown";
+	const ip = req.headers.get("x-forwarded-for") || "unknown";
 
-  let summary     = [];
-  let  messages  = await req.json();
+  if( !rateLimit(ip)) {
+		return new Response("Too many requests", { status: 429 });
+	};
+
+
+  let  message  = await req.json();
+  let  memory   = memoryStore.get(ip);
+
   // Definimos el comportamiento aquí
   const systemMessage = {
     role: "system",
     content: "eres un chatbot útil y amigable.",
   };
 
-	if( !rateLimit(ip)) {
-		return new Response("Too many requests", { status: 429 });
-	};
+  if (!memory) {
+    memory = {
+      summary: [
+        {
+          role: "system",
+          content: "",
+        }
+      ],
+      messages: [],
+      updatedAt: Date.now(),
+    };
+
+    memoryStore.set(ip, memory);
+  }
+
+  // Agrego el mensaje del usuario al historial de la conversación y asi no permite bugs
+  //   ya que da mas claridad de que recibes del front
+  memory.messages.push({
+     role: "user", content: message.messages
+  });
+
+  // Ambiguo --- suena a historial-- escala mal-- invita a bugs
+  // memory.messages.push(...messages.messages);
 
   /**
    *  Csalculo si tengo mas de x mensajes en el historial
@@ -36,31 +65,35 @@ export async function POST(req) {
    */
   const messagesToSend = async () => {
     // solo si hay mas de MAX_MESSAGES en el historial
-    if (messages.messages.length > MAX_MESSAGES) {
-      const oldMessages = messages.messages.slice(0, messages.messages.length - MAX_MESSAGES); // obtengo todos los mensajes antiguos
+    if (memory.messages.length > MAX_MESSAGES) {
+      const oldMessages = memory.messages.slice(0, memory.messages.length - MAX_MESSAGES); // obtengo todos los mensajes antiguos
 
-      const recentMessages = messages.messages.slice(-MAX_MESSAGES); // obtengo todos los mensajes recientes
+      const recentMessages = memory.messages.slice(-MAX_MESSAGES); // obtengo todos los mensajes recientes
 
       // Función para resumir la conversación
-      let summarytext = await summarizeConversation(oldMessages);
+      let summarytext = await summarizeConversation([
+        { ...memory.summary[0] },
+        ...oldMessages,
+      ]);
 
-      summary = {
-        role: "system",
-        content: `Resumen previo de la conversación: ${summarytext}`,
-      };
+      memory.summary =[ {
+        ...memory.summary[0],
+        content: memory.summary ? `${memory.summary[0].content}\n${summarytext}` : summarytext,
+      }];
 
-      messages.messages = recentMessages;
+      memory.messages = recentMessages;
     };
 
-    
     // retorno el array de mensajes a enviar al modelo
     //  system + resumen (si lo hay) + mensajes recientes
-    return [systemMessage, ...(summary ? summary : []), ...messages.messages];
+    return [systemMessage, ...(memory.summary ? memory.summary : []), ...memory.messages];
   };
+
+  // console.log("Messages to send to OpenAI:", await messagesToSend(), "cantidd de mensajes:", (await messagesToSend()).length );
   
   const stream = await client.chat.completions.create({
     model: "gpt-4o-mini",
-    messages: [...messagesToSend()],
+    messages: await messagesToSend(),
     temperature: 0.7,
     stream: true,
     
@@ -71,25 +104,40 @@ export async function POST(req) {
 
   // Es un constructor que crea un flujo de lectura de datos
 	const readableStream = new ReadableStream({
+
     async start (controller) {
+      let assistantText = ""
+
       try {
 				// Itera sobre cada paquete de datos que llega de la fuente original
         for await (const chunk of stream) {
 					// Extrae el texto específico (formato típico de OpenAI/Anthropic)
 					const text = chunk.choices[0].delta?.content;
 
-					// 'enqueue' mete el dato en la "tubería" para que el cliente lo reciba
-					// 'encoder.encode' convierte el texto a bytes (Uint8Array), que es lo que viaja por los streams
-					controller.enqueue(encoder.encode(text));
+          if (text) {
+            assistantText += text;
+            // 'enqueue' mete el dato en la "tubería" para que el cliente lo reciba
+            // 'encoder.encode' convierte el texto a bytes (Uint8Array), que es lo que viaja por los streams
+            controller.enqueue(encoder.encode(text));
+          }
         }
+
+        memory.messages.push({
+          role: "assistant",
+          content: assistantText
+        });
       } catch (error) {
         controller.error(error);
       } finally {
 				// Pase lo que pase, al terminar el bucle, cierra la "llave" del stream
         controller.close();
+
       }
     }
   });
+
+  console.log("Memory summary:", memory.summary);
+  console.log("Memory length:", memory.messages.length);
 
   return new Response(readableStream, {
     headers: {
