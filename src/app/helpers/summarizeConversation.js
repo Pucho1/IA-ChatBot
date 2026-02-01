@@ -17,5 +17,7 @@ export async function summarizeConversation(messages) {
     temperature: 0.7,
   });
 
+  // console.log("Resumen generado:", response.choices[0].message.content, "ata qe le entro ----> ", messages );
+
   return response.choices[0].message.content ;
 };

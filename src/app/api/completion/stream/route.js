@@ -2,6 +2,7 @@ import OpenAI from "openai";
 
 import { rateLimit } from "@/app/helpers/retaeLimits";
 import { summarizeConversation } from "@/app/helpers/summarizeConversation";
+import { maybeExtractFacts } from "@/app/helpers/maybeExtractFacts";
 
 // Inicializo el cliente de OpenAI creando una instancia de la clase OpenAI 
 // a la cual le paso la clave de API desde las variables de entorno
@@ -41,12 +42,13 @@ export async function POST(req) {
           content: "",
         }
       ],
+      facts: [],
       messages: [],
       updatedAt: Date.now(),
     };
 
     memoryStore.set(ip, memory);
-  }
+  };
 
   // Agrego el mensaje del usuario al historial de la conversación y asi no permite bugs
   //   ya que da mas claridad de que recibes del front
@@ -55,45 +57,64 @@ export async function POST(req) {
   });
 
   // Ambiguo --- suena a historial-- escala mal-- invita a bugs
-  // memory.messages.push(...messages.messages);
+  //  // memory.messages.push(...messages.messages);
+
+
+  await maybeExtractFacts(message, memory);
 
   /**
-   *  Csalculo si tengo mas de x mensajes en el historial
-   *  Si es así, resumo los mas antiguos y los reemplazo por un mensaje de resumen
+   *  Calculo si tengo mas de x mensajes en el historial
+   *  Si es así, resumo los mas antiguos y los remplazo por un mensaje de resumen
    *  para mantener el contexto sin exceder el límite de mensajes.
    * @returns Arry de mensajes a enviar al modelo
    */
-  const messagesToSend = async () => {
-    // solo si hay mas de MAX_MESSAGES en el historial
-    if (memory.messages.length > MAX_MESSAGES) {
-      const oldMessages = memory.messages.slice(0, memory.messages.length - MAX_MESSAGES); // obtengo todos los mensajes antiguos
+  if (memory.messages.length > MAX_MESSAGES) {
 
-      const recentMessages = memory.messages.slice(-MAX_MESSAGES); // obtengo todos los mensajes recientes
+    const overflow = memory.messages.length - MAX_MESSAGES;
 
-      // Función para resumir la conversación
-      let summarytext = await summarizeConversation([
-        { ...memory.summary[0] },
-        ...oldMessages,
-      ]);
+    const oldMessages = memory.messages.slice(0, overflow); // obtengo todos los mensajes antiguos
 
-      memory.summary =[ {
-        ...memory.summary[0],
-        content: memory.summary ? `${memory.summary[0].content}\n${summarytext}` : summarytext,
-      }];
+    const recentMessages = memory.messages.slice(-MAX_MESSAGES); // obtengo todos los mensajes recientes
 
-      memory.messages = recentMessages;
-    };
+    // Función para resumir la conversación
+    let summarytext = await summarizeConversation([
+      { ...memory.summary[0] },
+      ...oldMessages,
+    ]);
 
+    memory.summary =[ {
+      ...memory.summary[0],
+      content: summarytext,
+    }];
+
+    memory.messages = recentMessages;
+  };
+
+
+  const messagesToSend  = [
     // retorno el array de mensajes a enviar al modelo
     //  system + resumen (si lo hay) + mensajes recientes
-    return [systemMessage, ...(memory.summary ? memory.summary : []), ...memory.messages];
-  };
+    systemMessage,
+    ...(memory.facts.length
+      ? [
+          {
+            role: "system",
+            content: "Hechos conocidos sobre el usuario: \n" +
+              memory.facts.map(fact => `- ${fact}`).join("\n"),
+          }
+        ]
+      : []
+    ),
+    ...(memory.summary ? memory.summary : []),
+    ...memory.messages
+  ];
+  
 
   // console.log("Messages to send to OpenAI:", await messagesToSend(), "cantidd de mensajes:", (await messagesToSend()).length );
   
   const stream = await client.chat.completions.create({
     model: "gpt-4o-mini",
-    messages: await messagesToSend(),
+    messages: messagesToSend,
     temperature: 0.7,
     stream: true,
     
@@ -136,12 +157,9 @@ export async function POST(req) {
     }
   });
 
-  console.log("Memory summary:", memory.summary);
-  console.log("Memory length:", memory.messages.length);
-
   return new Response(readableStream, {
     headers: {
       "Content-Type": "text/plain; charset=utf-8",
     },
   });
-}
+};
