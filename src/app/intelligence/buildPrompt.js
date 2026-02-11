@@ -4,7 +4,13 @@
  * @returns 
  */
 
-export function buildPrompt({ systemMessage, memory }) {
+export function buildPrompt({ memory }) {
+
+      // Definimos el comportamiento aquí
+      const systemMessage = {
+        role: "system",
+        content: "eres un chatbot útil y amigable.",
+      };
 
     const messagesToSend  = [
         // retorno el array de mensajes a enviar al modelo

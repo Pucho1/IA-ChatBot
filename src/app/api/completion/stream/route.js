@@ -1,8 +1,5 @@
-import OpenAI from "openai";
-
 import { rateLimit } from "@/app/helpers/retaeLimits";
 
-import { summarizeConversation } from "@/app/intelligence/summarizeConversation";
 import { maybeExtractFacts } from "@/app/intelligence/maybeExtractFacts";
 import { buildPrompt } from "@/app/intelligence/buildPrompt";
 
@@ -10,8 +7,9 @@ import { llmClient } from "@/app/llm/llmClinet";
 
 import { materializeFacts } from "@/app/memory/materializeFacts";
 import { storeFact } from "@/app/memory/factStore";
+import { storeSummary } from "@/app/memory/sumaryStore";
+import { createMemoryStore } from "@/app/memory/memoryStore";
 
-const MAX_MESSAGES = 10;
 const memoryStore  = new Map();
 
 
@@ -24,31 +22,10 @@ export async function POST(req) {
 		return new Response("Too many requests", { status: 429 });
 	};
 
-
   let  message  = await req.json();
-  let  memory   = memoryStore.get(ip); // obtengo la memoria asociada a esa IP, si es que existe
 
-  // Definimos el comportamiento aquí
-  const systemMessage = {
-    role: "system",
-    content: "eres un chatbot útil y amigable.",
-  };
-
-  if (!memory) {
-    memory = {
-      summary: [
-        {
-          role: "system",
-          content: "",
-        }
-      ], // ----> esto aporta Contexto al chat
-      facts: [], // ----> esto aporta Identidad al chat
-      messages: [], // ----> esto aporta fluides al chat
-      updatedAt: Date.now(),
-    };
-
-    memoryStore.set(ip, memory);
-  };
+  const memory = createMemoryStore(memoryStore, ip); // Asegura que la memoria para esta IP esté inicializada
+  
 
   // Agrego el mensaje del usuario al historial de la conversación y asi no permite bugs
   //   ya que da mas claridad sobre que recibes del front
@@ -66,41 +43,14 @@ export async function POST(req) {
 
   storeFact(memory, materializedFacts);
 
+  await storeSummary(memory);
 
   console.log("Memory after storing facts:", memory);
-
-  /**
-   *  Calculo si tengo mas de x mensajes en el historial
-   *  Si es así, resumo los mas antiguos y los remplazo por un mensaje de resumen
-   *  para mantener el contexto sin exceder el límite de mensajes.
-   * @returns Arry de mensajes a enviar al modelo
-   */
-  if (memory.messages.length > MAX_MESSAGES) {
-
-    const overflow = memory.messages.length - MAX_MESSAGES;
-
-    const oldMessages = memory.messages.slice(0, overflow); // obtengo todos los mensajes antiguos
-
-    const recentMessages = memory.messages.slice(-MAX_MESSAGES); // obtengo todos los mensajes recientes
-
-    // Función para resumir la conversación
-    let summarytext = await summarizeConversation([
-      { ...memory.summary[0] },
-      ...oldMessages,
-    ]);
-
-    memory.summary =[ {
-      ...memory.summary[0],
-      content: summarytext,
-    }];
-
-    memory.messages = recentMessages;
-  };
 
 
   // console.log("Messages to send to OpenAI:", await messagesToSend(), "cantidd de mensajes:", (await messagesToSend()).length );
   
-  const messagesToSend = buildPrompt({ systemMessage, memory });
+  const messagesToSend = buildPrompt({ memory });
 
   const stream = await llmClient().Stream({
     messages: messagesToSend,
