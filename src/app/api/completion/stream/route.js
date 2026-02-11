@@ -1,15 +1,15 @@
 import OpenAI from "openai";
 
 import { rateLimit } from "@/app/helpers/retaeLimits";
-import { summarizeConversation } from "@/app/helpers/summarizeConversation";
-import { maybeExtractFacts } from "@/app/helpers/maybeExtractFacts";
 
-// Inicializo el cliente de OpenAI creando una instancia de la clase OpenAI 
-// a la cual le paso la clave de API desde las variables de entorno
-// es mas compatible con el entorno de node.js pero tambien mas lenta que edge
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+import { summarizeConversation } from "@/app/intelligence/summarizeConversation";
+import { maybeExtractFacts } from "@/app/intelligence/maybeExtractFacts";
+import { buildPrompt } from "@/app/intelligence/buildPrompt";
+
+import { llmClient } from "@/app/llm/llmClinet";
+
+import { materializeFacts } from "@/app/memory/materializeFacts";
+import { storeFact } from "@/app/memory/factStore";
 
 const MAX_MESSAGES = 10;
 const memoryStore  = new Map();
@@ -26,7 +26,7 @@ export async function POST(req) {
 
 
   let  message  = await req.json();
-  let  memory   = memoryStore.get(ip);
+  let  memory   = memoryStore.get(ip); // obtengo la memoria asociada a esa IP, si es que existe
 
   // Definimos el comportamiento aquí
   const systemMessage = {
@@ -41,9 +41,9 @@ export async function POST(req) {
           role: "system",
           content: "",
         }
-      ],
-      facts: [],
-      messages: [],
+      ], // ----> esto aporta Contexto al chat
+      facts: [], // ----> esto aporta Identidad al chat
+      messages: [], // ----> esto aporta fluides al chat
       updatedAt: Date.now(),
     };
 
@@ -51,16 +51,23 @@ export async function POST(req) {
   };
 
   // Agrego el mensaje del usuario al historial de la conversación y asi no permite bugs
-  //   ya que da mas claridad de que recibes del front
+  //   ya que da mas claridad sobre que recibes del front
   memory.messages.push({
-     role: "user", content: message.messages
+    role: "user", content: message.messages
   });
 
   // Ambiguo --- suena a historial-- escala mal-- invita a bugs
   //  // memory.messages.push(...messages.messages);
 
 
-  await maybeExtractFacts(message, memory);
+  const extractedFacts = await maybeExtractFacts(message, memory);
+
+  const materializedFacts = materializeFacts(extractedFacts);
+
+  storeFact(memory, materializedFacts);
+
+
+  console.log("Memory after storing facts:", memory);
 
   /**
    *  Calculo si tengo mas de x mensajes en el historial
@@ -91,33 +98,13 @@ export async function POST(req) {
   };
 
 
-  const messagesToSend  = [
-    // retorno el array de mensajes a enviar al modelo
-    //  system + resumen (si lo hay) + mensajes recientes
-    systemMessage,
-    ...(memory.facts.length
-      ? [
-          {
-            role: "system",
-            content: "Hechos conocidos sobre el usuario: \n" +
-              memory.facts.map(fact => `- ${fact}`).join("\n"),
-          }
-        ]
-      : []
-    ),
-    ...(memory.summary ? memory.summary : []),
-    ...memory.messages
-  ];
-  
-
   // console.log("Messages to send to OpenAI:", await messagesToSend(), "cantidd de mensajes:", (await messagesToSend()).length );
   
-  const stream = await client.chat.completions.create({
-    model: "gpt-4o-mini",
+  const messagesToSend = buildPrompt({ systemMessage, memory });
+
+  const stream = await llmClient().Stream({
     messages: messagesToSend,
     temperature: 0.7,
-    stream: true,
-    
   });
 
 	// creo un encoder para convertir texto a Uint8Array --"bytes"-- que bes lo que puede viajar en streams

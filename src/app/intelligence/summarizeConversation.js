@@ -1,8 +1,4 @@
-import OpenAI from "openai";
-
-const client = new OpenAI({
-	apiKey: process.env.OPENAI_API_KEY,
-});
+import { llmClient } from "../llm/llmClinet";
 
 const systemMessage = {
 	role: "system",
@@ -10,11 +6,11 @@ const systemMessage = {
 };
 
 export async function summarizeConversation(messages) {
-  
-	const response = await client.chat.completions.create({
-    model: "gpt-4o-mini",
+
+  const response = await llmClient().complete({
     messages: [systemMessage, ...messages],
     temperature: 0.7,
+    format: "text",
   });
 
   // console.log("Resumen generado:", response.choices[0].message.content, "ata qe le entro ----> ", messages );

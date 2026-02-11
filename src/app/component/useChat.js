@@ -69,7 +69,7 @@ const useChat = () => {
 		setLoading(false);
 	};
 
-	console.log("useChat messages:", messages);
+	// console.log("useChat messages:", messages);
   
   return {
 		input,
