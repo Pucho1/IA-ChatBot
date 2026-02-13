@@ -1,16 +1,11 @@
 import { rateLimit } from "@/app/helpers/retaeLimits";
 
-import { maybeExtractFacts } from "@/app/intelligence/maybeExtractFacts";
-import { buildPrompt } from "@/app/intelligence/buildPrompt";
-
 import { llmClient } from "@/app/llm/llmClinet";
 
-import { materializeFacts } from "@/app/memory/materializeFacts";
-import { storeFact } from "@/app/memory/factStore";
-import { storeSummary } from "@/app/memory/sumaryStore";
 import { createMemoryStore } from "@/app/memory/memoryStore";
 
-const memoryStore  = new Map();
+const memoryStore = new Map();
+
 
 
 export async function POST(req) {
@@ -22,35 +17,28 @@ export async function POST(req) {
 		return new Response("Too many requests", { status: 429 });
 	};
 
-  let  message  = await req.json();
+  let { messages }  = await req.json();
 
   const memory = createMemoryStore(memoryStore, ip); // Asegura que la memoria para esta IP esté inicializada
   
 
+  console.log("Received messages:", messages);
+
   // Agrego el mensaje del usuario al historial de la conversación y asi no permite bugs
   //   ya que da mas claridad sobre que recibes del front
-  memory.messages.push({
-    role: "user", content: message.messages
-  });
+  memory.addUserMessage(messages);
 
-  // Ambiguo --- suena a historial-- escala mal-- invita a bugs
-  //  // memory.messages.push(...messages.messages);
+  await memory.processIncomingFacts(messages);
 
+  await memory.updateSummaryIfNeeded();
 
-  const extractedFacts = await maybeExtractFacts(message, memory);
-
-  const materializedFacts = materializeFacts(extractedFacts);
-
-  storeFact(memory, materializedFacts);
-
-  await storeSummary(memory);
-
-  console.log("Memory after storing facts:", memory);
-
-
-  // console.log("Messages to send to OpenAI:", await messagesToSend(), "cantidd de mensajes:", (await messagesToSend()).length );
+  // console.log("Current memory state:", {
+  //   messages: memory.messages,
+  //   facts: memory.facts,
+  //   summary: memory.summary,
+  // });
   
-  const messagesToSend = buildPrompt({ memory });
+  const messagesToSend = memory.buildPrompt({ memory });
 
   const stream = await llmClient().Stream({
     messages: messagesToSend,
@@ -67,10 +55,10 @@ export async function POST(req) {
       let assistantText = ""
 
       try {
-				// Itera sobre cada paquete de datos que llega de la fuente original
+        // Itera sobre cada paquete de datos que llega de la fuente original
         for await (const chunk of stream) {
-					// Extrae el texto específico (formato típico de OpenAI/Anthropic)
-					const text = chunk.choices[0].delta?.content;
+          // Extrae el texto específico (formato típico de OpenAI/Anthropic)
+          const text = chunk.choices[0].delta?.content;
 
           if (text) {
             assistantText += text;
@@ -80,14 +68,12 @@ export async function POST(req) {
           }
         }
 
-        memory.messages.push({
-          role: "assistant",
-          content: assistantText
-        });
+        memory.addAssistantMessage(assistantText);
+
       } catch (error) {
         controller.error(error);
       } finally {
-				// Pase lo que pase, al terminar el bucle, cierra la "llave" del stream
+        // Pase lo que pase, al terminar el bucle, cierra la "llave" del stream
         controller.close();
 
       }

@@ -27,6 +27,9 @@ export function llmClient() {
 
 
     async function Stream ({ messages, temperature }){
+
+        console.log("Building prompt with messages: ---------?????", messages);
+
         return await client.chat.completions.create({
             model: "gpt-4o-mini",
             messages,

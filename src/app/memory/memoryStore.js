@@ -1,3 +1,4 @@
+import { Memory } from "./memory";
 
 
 export function createMemoryStore(memoryStore, ip) {
@@ -19,5 +20,5 @@ export function createMemoryStore(memoryStore, ip) {
         memoryStore.set(ip, memory);
     };
 
-    return memory;
+    return new Memory(memory);
 };

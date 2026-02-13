@@ -1,7 +1,7 @@
 import { llmClient } from "../llm/llmClinet";
 
 
-export async function maybeExtractFacts(message, memory) {
+export async function maybeExtractFacts(message) {
 
 	const promptMessage= [
 		{
@@ -15,7 +15,7 @@ export async function maybeExtractFacts(message, memory) {
 		},
 		{
 			role: "user",
-			content: message.messages,
+			content: message,
 		},
 	];
 	

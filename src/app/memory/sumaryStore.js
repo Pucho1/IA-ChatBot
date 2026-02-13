@@ -11,6 +11,8 @@ const MAX_MESSAGES = 10;
    */
 export async function storeSummary(memory) {
 
+    console.log("Checking if summary update is needed... ---------->", memory);
+
     if (memory.messages.length > MAX_MESSAGES) {
 
         const overflow = memory.messages.length - MAX_MESSAGES;
