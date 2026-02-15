@@ -6,8 +6,6 @@ import { createMemoryStore } from "@/app/memory/memoryStore";
 
 const memoryStore = new Map();
 
-
-
 export async function POST(req) {
 
 	// Obtengo la IP del cliente desde los headers de la petición
@@ -17,28 +15,14 @@ export async function POST(req) {
 		return new Response("Too many requests", { status: 429 });
 	};
 
-  let { messages }  = await req.json();
+  let { messages } = await req.json();
 
   const memory = createMemoryStore(memoryStore, ip); // Asegura que la memoria para esta IP esté inicializada
   
 
-  console.log("Received messages:", messages);
+  await memory.handlerUserInput(messages);
 
-  // Agrego el mensaje del usuario al historial de la conversación y asi no permite bugs
-  //   ya que da mas claridad sobre que recibes del front
-  memory.addUserMessage(messages);
-
-  await memory.processIncomingFacts(messages);
-
-  await memory.updateSummaryIfNeeded();
-
-  // console.log("Current memory state:", {
-  //   messages: memory.messages,
-  //   facts: memory.facts,
-  //   summary: memory.summary,
-  // });
-  
-  const messagesToSend = memory.buildPrompt({ memory });
+  const messagesToSend = memory.buildPrompt();
 
   const stream = await llmClient().Stream({
     messages: messagesToSend,
@@ -68,14 +52,13 @@ export async function POST(req) {
           }
         }
 
-        memory.addAssistantMessage(assistantText);
+        memory.addAssistantResponse(assistantText);
 
       } catch (error) {
         controller.error(error);
       } finally {
         // Pase lo que pase, al terminar el bucle, cierra la "llave" del stream
         controller.close();
-
       }
     }
   });
