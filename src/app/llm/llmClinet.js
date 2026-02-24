@@ -22,6 +22,8 @@ export function llmClient() {
             config.max_tokens = 500; // Limito la respuesta a 500 tokens para evitar respuestas demasiado largas
         }
 
+        console.log("esto es lo que envio ---------->", config)
+
         return await client.chat.completions.create(config);
     };
 

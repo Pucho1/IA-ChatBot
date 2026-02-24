@@ -44,7 +44,7 @@ const useChat = () => {
 		let assistantText = "";
 
 
-		// Forma de decir: "Sigue pidiendo datos indefinidamente hasta que el objeto que me devuelvas diga { done: true }
+		// Forma de decir: "Sigue pidiendo datos continuamente hasta que el objeto que me devuelvas diga { done: true }
 		// lo que me devuelve el back es una promesa que se resuelve en un objeto { done, value }
 		//  y no un arreglo de promesas como lo devuelve la api de openai
 		while (true) {
@@ -69,8 +69,6 @@ const useChat = () => {
 		setLoading(false);
 	};
 
-	// console.log("useChat messages:", messages);
-  
   return {
 		input,
 		messages,

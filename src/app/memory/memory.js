@@ -1,6 +1,9 @@
 import { maybeExtractFacts } from "../intelligence/maybeExtractFacts";
 import { summarizeConversation } from "../intelligence/summarizeConversation";
+
 import { materializeFacts } from "./materializeFacts";
+
+import { resolveAction } from "../actions/actionResolve";
 
 const MAX_MESSAGES = 10;
 
@@ -29,6 +32,34 @@ export class Memory {
         this.state.messages.push({
             role: "assistant",
             content
+        });
+    };
+
+    /**
+     * Cuando el LLM decide usar una tool, eso es un mensaje del assistant.
+     * @param {nombre de la herramienta} name 
+     * @param {argumentos de la herramienta} args 
+     */
+    addToolCall(name, args) {
+        this.state.messages.push({
+            role: "assistant",
+            tool_call: { // esta propiedad es para marcar que este mensaje no es una respuesta normal del assistant, sino una llamada a una herramienta
+                name: name,
+                args: args
+            },
+        });
+    };
+
+    /**
+     * 
+     * @param {*} name 
+     * @param {*} result 
+     */
+    addToolResult(name, result) {
+        this.state.messages.push({
+            role: "tool",
+            name: name,
+            content: result
         });
     };
 
@@ -132,13 +163,35 @@ export class Memory {
      * Construlle e promp que le vamos a pasar al LLM
      * @returns Promp que le vamos a pasar al LLM
      */
-    buildPrompt() {
+    buildPrompt({tools}) {
 
-        // Definimos el comportamiento aquí
+        const toolsDescription = tools.length
+         ? `
+            Puedes usar las siguientes herramientas:
+
+            ${tools.map(tool => `
+            Nombre: ${tool.name}
+            Descripción: ${tool.description}
+            Parámetros:
+            ${JSON.stringify(tool.parameters, null, 2)}
+            `).join("\n")}
+            `
+        : "No hay herramientas disponibles.";
+
         
+        // Definimos el comportamiento aquí
+
         // Interpretar intención
         // Clasificarla
         // Estructurarla
+        // El sistema de mensajes que le vamos a pasar al LLM siempre va a tener esta estructura:
+        //{
+        //   "type": "final" | "tool",
+        //   "tool": string | null,
+        //   "args": object | null,
+        //   "content": string | null
+        // }
+        // No "message". No "action". No "text". No "response".
         const systemMessage = {
             role: "system",
             content: `
@@ -147,17 +200,29 @@ export class Memory {
                 Debes responder SIEMPRE en formato JSON válido con esta estructura:
 
                 {
-                    "type": "message" | "action",
-                    "content": string,          // si es mensaje
-                    "action": string | null,    // si es acción
-                    "payload": object | null    // datos de la acción
+                    "type": "tool" | "final",
+                    "tool": string | null,     // Si type = "tool" indica la herramienta a usar sino es null
+                    "args": object | null      // Si type = "tool" indica los argumentos para la herramienta sino es null
+                    "content": string, | null  // Si type = "final" es la respuesta final al usuario, sino es null 
                 }
 
-                Si solo es conversación normal:
-                type = "message"
+                ${toolsDescription}
+                
+                Si necesitas usar una herramienta:
+                {
+                    - type = "tool"
+                    - tool = nombre exacto
+                    - args = objeto válido según parámetros
+                    - content = null
+                }
 
-                Si el usuario pide hacer algo:
-                type = "action"
+                Si no necesitas herramienta:
+                {
+                    - type = "final"
+                    - tool = null
+                    - args = null
+                    - content = respuesta al usuario
+                }
             `,
         };
 
@@ -180,6 +245,7 @@ export class Memory {
             ...(this.state.summary ? this.state.summary : []),
             ...this.state.messages
         ];
+
 
         return messagesToSend;
     };
@@ -217,7 +283,6 @@ export class Memory {
      * @param {*} message 
      */
     async handlerUserInput(message) {
-
         this.#addUserMessage(message);
 
         await this.#processIncomingFacts(message);
@@ -228,9 +293,9 @@ export class Memory {
     /**
      * Proveeo una manera de almacenar la salida del sistema
      */
-    addAssistantResponse(text) {
-        this.#addAssistantMessage(text);
-    }
+    addAssistantResponse(response) {
+        this.#addAssistantMessage(response.content);
+    };
 
     get messages() {
         return this.state.messages;
