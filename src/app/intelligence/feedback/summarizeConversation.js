@@ -1,4 +1,4 @@
-import { llmClient } from "../llm/llmClinet";
+import { llmClient } from "@/app/llm/llmClinet";
 
 const systemMessage = {
 	role: "system",

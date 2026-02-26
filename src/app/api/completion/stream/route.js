@@ -1,3 +1,4 @@
+import { AgentRuntime } from "@/app/agent/AgenRuntime/agentRuntime";
 import { AgentEngine } from "@/app/agent/AgentEngine";
 import { ToolRegistry } from "@/app/agent/tools/ToolRegistry";
 import { rateLimit } from "@/app/helpers/retaeLimits";
@@ -20,17 +21,28 @@ export async function POST(req) {
 
   const memory = createMemoryStore(memoryStore, ip); // Asegura que la memoria para esta IP esté inicializada
 
+  const registry = new ToolRegistry(); // Una sola fuente de verdad
 
   const agent = new AgentEngine({
     memory: memory,
-    registry: new ToolRegistry(), // Puedes pasar el registry si está disponible
+    registry: registry, // Puedes pasar el registry si está disponible
   });
 
-  const agentResponse = await agent.run(messages); // le paso el ultimo mensaje del usuario al agente para que lo procese
+  const runtime = new AgentRuntime({
+    engine : agent,
+    tools: registry,
+    maxSteps: 6
+  });
+
+  const agentResponse = await runtime.run(messages);
 
 
 
-  console.log("respuest del AgentEngine ------->", agentResponse)
+  // const agentResponse = await agent.run(messages); // le paso el ultimo mensaje del usuario al agente para que lo procese
+
+
+
+  console.log("respuest del AgentRuntime ------->", agentResponse)
 
   // const cleanedResponse = extractJSON(notStreamResponse.choices[0].message.content);
 
@@ -70,7 +82,7 @@ export async function POST(req) {
   //   }
   // });
 
-  return new Response(agentResponse, {
+  return new Response(agentResponse.output || agentResponse.error, {
     headers: {
       "Content-Type": "text/plain; charset=utf-8",
     },

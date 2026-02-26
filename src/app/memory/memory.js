@@ -1,9 +1,9 @@
 import { maybeExtractFacts } from "../intelligence/maybeExtractFacts";
-import { summarizeConversation } from "../intelligence/summarizeConversation";
 
 import { materializeFacts } from "./materializeFacts";
 
 import { resolveAction } from "../actions/actionResolve";
+import { summarizeConversation } from "../intelligence/feedback/summarizeConversation";
 
 const MAX_MESSAGES = 10;
 
@@ -163,91 +163,110 @@ export class Memory {
      * Construlle e promp que le vamos a pasar al LLM
      * @returns Promp que le vamos a pasar al LLM
      */
-    buildPrompt({tools}) {
+    // buildPrompt({tools}) {
 
-        const toolsDescription = tools.length
-         ? `
-            Puedes usar las siguientes herramientas:
+    //     const toolsDescription = tools.length
+    //      ? `
+    //         Puedes usar las siguientes herramientas:
 
-            ${tools.map(tool => `
-            Nombre: ${tool.name}
-            Descripción: ${tool.description}
-            Parámetros:
-            ${JSON.stringify(tool.parameters, null, 2)}
-            `).join("\n")}
-            `
-        : "No hay herramientas disponibles.";
+    //         ${tools.map(tool => `
+    //         Nombre: ${tool.name}
+    //         Descripción: ${tool.description}
+    //         Parámetros:
+    //         ${JSON.stringify(tool.parameters, null, 2)}
+    //         `).join("\n")}
+    //         `
+    //     : "No hay herramientas disponibles.";
 
         
-        // Definimos el comportamiento aquí
+    //     // Definimos el comportamiento aquí
 
-        // Interpretar intención
-        // Clasificarla
-        // Estructurarla
-        // El sistema de mensajes que le vamos a pasar al LLM siempre va a tener esta estructura:
-        //{
-        //   "type": "final" | "tool",
-        //   "tool": string | null,
-        //   "args": object | null,
-        //   "content": string | null
-        // }
-        // No "message". No "action". No "text". No "response".
-        const systemMessage = {
-            role: "system",
-            content: `
-                Eres un asistente conversacional.
+    //     // Interpretar intención
+    //     // Clasificarla
+    //     // Estructurarla
+    //     // El sistema de mensajes que le vamos a pasar al LLM siempre va a tener esta estructura:
+    //     //{
+    //     //   "type": "final" | "tool",
+    //     //   "tool": string | null,
+    //     //   "args": object | null,
+    //     //   "content": string | null
+    //     // }
+    //     // No "message". No "action". No "text". No "response".
+    //     const systemMessage = {
+    //         role: "system",
+    //         content: `
+    //             Eres un asistente conversacional.
 
-                Debes responder SIEMPRE en formato JSON válido con esta estructura:
+    //             Debes responder SIEMPRE en formato JSON válido con esta estructura:
 
-                {
-                    "type": "tool" | "final",
-                    "tool": string | null,     // Si type = "tool" indica la herramienta a usar sino es null
-                    "args": object | null      // Si type = "tool" indica los argumentos para la herramienta sino es null
-                    "content": string, | null  // Si type = "final" es la respuesta final al usuario, sino es null 
-                }
+    //             {
+    //                 "type": "tool" | "final",
+    //                 "tool": string | null,     // Si type = "tool" indica la herramienta a usar sino es null
+    //                 "args": object | null      // Si type = "tool" indica los argumentos para la herramienta sino es null
+    //                 "content": string, | null  // Si type = "final" es la respuesta final al usuario, sino es null 
+    //             }
 
-                ${toolsDescription}
+    //             ${toolsDescription}
                 
-                Si necesitas usar una herramienta:
-                {
-                    - type = "tool"
-                    - tool = nombre exacto
-                    - args = objeto válido según parámetros
-                    - content = null
-                }
+    //             Si necesitas usar una herramienta:
+    //             {
+    //                 - type = "tool"
+    //                 - tool = nombre exacto
+    //                 - args = objeto válido según parámetros
+    //                 - content = null
+    //             }
 
-                Si no necesitas herramienta:
-                {
-                    - type = "final"
-                    - tool = null
-                    - args = null
-                    - content = respuesta al usuario
-                }
-            `,
-        };
+    //             Si no necesitas herramienta:
+    //             {
+    //                 - type = "final"
+    //                 - tool = null
+    //                 - args = null
+    //                 - content = respuesta al usuario
+    //             }
+    //         `,
+    //     };
 
-        const messagesToSend  = [
-            // retorno el array de mensajes a enviar al modelo
-            //  system + facts +  resumen (si lo hay) + mensajes recientes
-            systemMessage,
-            ...(this.state.facts.length
+    //     const messagesToSend  = [
+    //         systemMessage,
+           
+    //         ...(this.state.summary ? this.state.summary : []),
+    //         ...this.state.messages
+    //     ];
+
+
+    //     return messagesToSend;
+    // };
+
+        /**
+     * Devuelve los hechos conocidos del usuario en formato adecuado para el prompt.
+     * @returns Arry
+     */
+    #getfactsForPrompt() {
+        return( this.state.facts.length
             ?   [
                     {
                         role: "system",
                         content: "Hechos conocidos sobre el usuario (úsalos solo si son relevantes para responder, " +
                         "no los repitas explícitamente a menos que el usuario lo pida):\n" +
-                        // this.state.facts.map(fact => `- ${fact}`).join("\n"),
                         this.state.facts.map(fact => `- ${fact.key}: ${fact.value}`).join("\n")
                     }
                 ]
             :   []
-            ),
-            ...(this.state.summary ? this.state.summary : []),
-            ...this.state.messages
-        ];
+        );
+    };
 
-
-        return messagesToSend;
+    /**
+     * Devuelve el estado actual de la memoria del agente.
+     * @returns Estado actual de la memoria
+     */
+    getState(){
+        const sumaryMessage = this.summary || [{role:"system", content: "No conversation summary"}];
+        
+        return { 
+            messages: this.messages,
+            facts:  this.#getfactsForPrompt(),
+            summary: sumaryMessage,
+        };
     };
 
     /**
@@ -283,6 +302,7 @@ export class Memory {
      * @param {*} message 
      */
     async handlerUserInput(message) {
+
         this.#addUserMessage(message);
 
         await this.#processIncomingFacts(message);
@@ -296,6 +316,8 @@ export class Memory {
     addAssistantResponse(response) {
         this.#addAssistantMessage(response.content);
     };
+
+
 
     get messages() {
         return this.state.messages;

@@ -14,8 +14,6 @@
 
     Guarda historial
  */
-const MAX_STEPS = 20;
-
 export class AgentRuntime {
 
     /**
@@ -28,8 +26,8 @@ export class AgentRuntime {
         ERROR
      */
 
-    constructor({ ngine, tools, maxSteps = 8 }) {
-        this.ngine    = ngine;
+    constructor({ engine, tools, maxSteps = 8 }) {
+        this.engine   = engine;
         this.tools    = tools;
         this.maxSteps = maxSteps;
     };
@@ -50,16 +48,23 @@ export class AgentRuntime {
     };
 
 
-    run = async (goal) => {  
+    run = async (goal) => {
 
         const state = this.createInitialState(goal);
         state.status = "running";
+
+        // Muy útil para debugging, te muestra con qué estado inicial está trabajando el agente.
+        console.log("Estado inicial del agente:", state);
+
 
         try {
             while(this.shouldContinue(state)) {
                 state.step++;
 
-                const decision = await this.ngine.step(state);  // llamas a tu capa de Cognición (Planner) devuelve una decision que puede ser usar una herramienta o finalizar con una respuesta.
+                console.log(`Paso ${state.step}: Ejecutando paso ${state.step} con estado:`, state); // Esto es oro puro para debugging. Te muestra exactamente qué decisión tomó el agente en cada paso y qué observación obtuvo.
+
+                const decision = await this.engine.step(state);  // llamas a tu capa de Cognición (Planner) devuelve una decision que puede ser usar una herramienta o finalizar con una respuesta.
+                
                 state.lastDecision = decision;
 
                 const observation = await this.processDecision(decision, state); // (Executor) procesa la decision, si es una decision de tipo "tool" ejecuta la herramienta y devuelve el resultado, si es una decision de tipo "final" devuelve la respuesta final.
@@ -107,6 +112,11 @@ export class AgentRuntime {
      * @returns 
      */
     async processDecision(decision, state) {
+
+        // console.log("Procesando decisión:--------------->", decision); // Esto es oro puro para debugging. Te muestra exactamente qué decisión está tratando de procesar el agente, lo cual es crucial para entender por qué el agente tomó cierta acción o por qué falló.
+
+        const avilableTools = this.tools.getToolManifest(); // Le pasamos al LLM la lista de herramientas disponibles para que pueda decidir cuál usar. Esto es crucial para que el LLM tome decisiones informadas y no intente usar herramientas que no existen.   
+        
         if (decision.type === "final"){
             state.status = "completed";
 
@@ -114,7 +124,7 @@ export class AgentRuntime {
         };
 
         if (decision.type === "tool"){ // Si la decisión es usar una herramienta, ejecutamos esa herramienta y devolvemos el resultado.
-            const tool = this.tools[decision.tool];
+            const tool = this.tools.has(decision.tool);
 
             // Validación de seguridad: Nos aseguramos de que la herramienta que el LLM quiere usar está en nuestra lista de herramientas permitidas.
             //  Esto es crucial para evitar que el LLM ejecute código malicioso o acceda a datos sensibles.
@@ -127,7 +137,7 @@ export class AgentRuntime {
 
             // Aquí es donde realmente se ejecuta la herramienta. Esto puede ser una consulta a una base de datos, una llamada a una API externa, 
             // o cualquier otra cosa que tu agente necesite hacer para cumplir su objetivo.
-            const result  = await tool(...decision.args);
+            const result  = await  this.tools.execute(decision.tool, ...decision.args);
             return { done: false, result };
         };
 
@@ -142,6 +152,9 @@ export class AgentRuntime {
     buildResponse(state) {
         const duration  = state.finishedAt - state.startedAt; // Es vital para telemetría y saber si tu agente es lento.
 
+        // Esto es oro puro para debugging. Te muestra exactamente qué pasó durante la ejecución del agente.
+        console.log("Estado final del agente:", state); 
+       
         return{
             // El agente se considera exitoso si llega a una decisión final antes de alcanzar el límite de pasos.
             //  Si alcanza el límite de pasos sin llegar a una decisión final, se considera que no tuvo éxito.
@@ -161,13 +174,3 @@ export class AgentRuntime {
         };
     };
 };
-
-
-   // for (let step = 0; step < MAX_STEPS; step++) {
-
-        //     decision = planner.decide(state);
-
-        //     executor.execute(decision);
-
-        //     update(state);
-        // };

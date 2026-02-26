@@ -9,7 +9,7 @@ const client = new OpenAI({
 });
 
 export function llmClient() {
-    async function complete ({ messages, temperature, format }){
+    async function complete ({ messages, temperature, format, tools }){
 
         const config = {
             model: "gpt-4o-mini",
@@ -21,6 +21,11 @@ export function llmClient() {
             config.response_format = { type: "json_object" };
             config.max_tokens = 500; // Limito la respuesta a 500 tokens para evitar respuestas demasiado largas
         }
+
+        if (tools) {
+            config.tools = tools;
+            config.tool_choice = "auto"; // Dejo que el modelo decida automáticamente qué herramienta usar, si es que necesita usar alguna. Esto es crucial para que el modelo pueda decidir no usar herramientas si no las necesita, lo que puede resultar en respuestas más directas y rápidas cuando las herramientas no son necesarias.
+        };
 
         console.log("esto es lo que envio ---------->", config)
 
