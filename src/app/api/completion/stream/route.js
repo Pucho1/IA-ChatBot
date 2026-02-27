@@ -38,15 +38,7 @@ export async function POST(req) {
 
 
 
-  // const agentResponse = await agent.run(messages); // le paso el ultimo mensaje del usuario al agente para que lo procese
-
-
-
   console.log("respuest del AgentRuntime ------->", agentResponse)
-
-  // const cleanedResponse = extractJSON(notStreamResponse.choices[0].message.content);
-
-
 
 	// creo un encoder para convertir texto a Uint8Array --"bytes"-- que bes lo que puede viajar en streams
   // const encoder = new TextEncoder();

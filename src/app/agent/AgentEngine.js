@@ -5,9 +5,9 @@ import { extractJSON } from "../sanyty/verifyJsonResponse";
 
 
 export class AgentEngine {
-    constructor({ memory, registry }) {
+    constructor({ memory, tool }) {
         this.memory = memory;
-        this.registry = registry;
+        this.tool = tool;
     };
 
     /**
@@ -20,7 +20,7 @@ export class AgentEngine {
 
         const conversationalState = this.memory.getState();
 
-        const toolManifest = this.registry.getToolManifest(); // Le pasamos al LLM la lista de herramientas disponibles para que pueda decidir cuál usar. Esto es crucial para que el LLM tome decisiones informadas y no intente usar herramientas que no existen.
+        const toolManifest = this.tool.getToolManifest(); // Le pasamos al LLM la lista de herramientas disponibles para que pueda decidir cuál usar. Esto es crucial para que el LLM tome decisiones informadas y no intente usar herramientas que no existen.
 
         // construyo el prompt con la memoria, que incluye el historial de mensajes, herramientas disponibles, etc.
         const prompt = this.buildPrompt(state, conversationalState);

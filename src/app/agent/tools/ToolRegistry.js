@@ -15,6 +15,13 @@ export class ToolRegistry {
     if (!tool.name || !tool.handler || !tool.schema) {
       throw new Error("Tool inválida");
     };
+
+    // Esto es crucial para evitar conflictos de nombres y asegurar que cada herramienta tenga un identificador único.
+    // Si el LLM intenta registrar una herramienta que ya existe, esto nos ayudará a detectar ese error rápidamente.
+    if (this.tools.has(tool.name)) { 
+      throw new Error(`Tool "${tool.name}" ya registrada`);
+    };
+
     this.tools.set(tool.name, tool);
   };
 
@@ -27,7 +34,15 @@ export class ToolRegistry {
     return this.tools.has(name);
   };
 
-  /**
+  get(name) {
+    return this.tools.get(name);
+  };
+
+  list() {
+    return Array.from(this.tools.keys());
+  };
+
+    /**
    * Devuelve las definiciones de las herramientas registradas, para que el LLM sepa como usarlas
    * @returns 
    */
@@ -35,7 +50,9 @@ export class ToolRegistry {
     return Array.from(this.tools.values()).map(tool => ({
       name: tool.name,
       description: tool.description,
-      schema: zodToJsonSchema( tool.schema.shape) // Zod no es JSON Schema. Debemos convertirlo a JSON Schema o a un formato simplificado.
+      schema: zodToJsonSchema( tool.schem, {
+          name: tool.name
+      }) // Zod no es JSON Schema. Debemos convertirlo a JSON Schema o a un formato simplificado.
     }));
   };
 
@@ -57,8 +74,12 @@ export class ToolRegistry {
 
     if (!parsed.success) {
       throw new Error(parsed.error.message);
-    }
+    };
 
-    return await tool.handler(args);
+    const result = await tool.handler(parsed.data);
+
+    // Esto es un truco para asegurarnos de que el resultado es serializable, 
+    // lo cual es crucial para que pueda ser enviado a través de la red o almacenado en la memoria del agente.
+    return JSON.parse(JSON.stringify(result)); 
   };
 };
