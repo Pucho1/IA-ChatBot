@@ -21,20 +21,22 @@ export async function POST(req) {
 
   const memory = createMemoryStore(memoryStore, ip); // Asegura que la memoria para esta IP esté inicializada
 
-  const registry = new ToolRegistry(); // Una sola fuente de verdad
+  const tools = new ToolRegistry(); // Una sola fuente de verdad
+
+  tools.register();
 
   const agent = new AgentEngine({
     memory: memory,
-    registry: registry, // Puedes pasar el registry si está disponible
+    tools: tools, // Puedes pasar el registry si está disponible
   });
 
   const runtime = new AgentRuntime({
     engine : agent,
-    tools: registry,
+    tools: tools,
     maxSteps: 6
   });
 
-  const agentResponse = await runtime.run(messages);
+  const agentResponse = await runtime.handlerUserInput(messages);
 
 
 

@@ -1,13 +1,12 @@
 
-import { resolveAction } from "../actions/actionResolve";
 import { llmClient } from "../llm/llmClinet";
 import { extractJSON } from "../sanyty/verifyJsonResponse";
 
 
 export class AgentEngine {
-    constructor({ memory, tool }) {
+    constructor({ memory, tools }) {
         this.memory = memory;
-        this.tool = tool;
+        this.tools = tools;
     };
 
     /**
@@ -16,11 +15,9 @@ export class AgentEngine {
      * @returns 
      */
     async step(state) {
-        await this.memory.handlerUserInput(state.goal); // guardo el input del usuario en la memoria
-
         const conversationalState = this.memory.getState();
 
-        const toolManifest = this.tool.getToolManifest(); // Le pasamos al LLM la lista de herramientas disponibles para que pueda decidir cuál usar. Esto es crucial para que el LLM tome decisiones informadas y no intente usar herramientas que no existen.
+        const toolManifest = this.tools.getToolManifest(); // Le pasamos al LLM la lista de herramientas disponibles para que pueda decidir cuál usar. Esto es crucial para que el LLM tome decisiones informadas y no intente usar herramientas que no existen.
 
         // construyo el prompt con la memoria, que incluye el historial de mensajes, herramientas disponibles, etc.
         const prompt = this.buildPrompt(state, conversationalState);
@@ -29,60 +26,38 @@ export class AgentEngine {
             {
                 messages: prompt, // construyo el prompt con la memoria y se lo paso al LLM, espero su respuesta
                 temperature: 0.7,
-                format: "json_object",
                 tools: toolManifest
             }
         );
 
-        const cleanedResponse = this.#clearResponse(llmResponse.choices[0].message.content);
+        console.log("Respuesta cruda del LLM: ", llmResponse.choices[0]);
 
-        return cleanedResponse; // devuelvo la respuesta del LLM para que el AgentRuntime la procese y decida qué hacer (usar una herramienta, finalizar, etc.)
-    };
+        // Eeste mensaje puede ser de dos tipos (1) una respuesta final con un mensaje de texto,
+        //  o (2) una decisión de usar una herramienta con el nombre de la herramienta y los argumentos para esa herramienta.
+        const message = llmResponse.choices[0].message; 
 
-    async run(userInput) {
-        this.memory.handlerUserInput(userInput);// guardo el input del usuario en la memoria
-
-        const toolManifest = this.registry.getToolManifest();
-
-        while(true) {
-
-            const cleanedResponse = extractJSON(llmResponse.choices[0].message.content);
-
-            if (!cleanedResponse) {
-              console.error("No se encontró JSON válido");
-              return new Response("Model format error", { status: 500 });
-            };
-
-            try{
-              clearLlmOutput = JSON.parse(cleanedResponse); // esto puede traer un error de formato devido a la respuesta dada por la IA
-            } catch(error){ 
-              // deberia tratar este error 
-              console.error("La IA envió basura, intentando limpiar...");
-              return new Response("Invalid JSON from LLM", { status: 500 });
-            };
-
-            // Aqui puedo parsear datos antes de resolver la acción, por ejemplo si quiero extraer un json de una respuesta que no esta bien formateada
-            const action = resolveAction(clearLlmOutput);
-
-            if(action.type === "tool") {
-
-                this.memory.addToolCall(action.tool, action.args);
-
-                const result = await this.registry.execute(action.tool, action.args);
-
-                this.memory.addToolResult(action.tool, result);
-
-            };
-
-            if(action.type === "final") {
-
-                this.memory.addAssistantResponse(action.content);
-
-                return action.content;
+        // 🔹 TOOL CALLS
+        if (message.tool_calls?.length > 0) {
+            return {
+                type: "tool",
+                toolCalls: message.tool_calls.map(call => ({
+                    id: call.id,
+                    name: call.function.name,
+                    args: JSON.parse(call.function.arguments)
+                }))
             };
         };
-    };
 
+        // 🔹 FINAL ANSWER
+        if (message.content) {
+            return { type: "final", output: message.content };
+        };
+
+        return {
+            type: "error",
+            output: "Invalid model response"
+        };
+    };
 
     /**
      * Construye el prompt para el LLM basado en el estado actual del agente y la memoria.
@@ -91,35 +66,48 @@ export class AgentEngine {
         const { goal, step, maxSteps, history } = runtimeState;
         const { messages, facts, summary }      = conversationalState;
 
-        const previousActions = history.map(histor => {
-            if (histor.decision.type === "tool") {
-                return `Tool: ${histor.decision.tool}      Result: ${JSON.stringify(histor.observation?.result)}`
+        console.log("paso:" + step + " Construyendo prompt con el siguiente histry del agente:", history);
+
+        const toolSequence = history.flatMap(h => {
+            if (h.decision.type === "tool" && h.observation && h.observation?.toolResults) {
+
+                const assistantMessage = {
+                    role: "assistant",
+                    tool_calls: h.decision.toolCalls?.map(call => ({
+                        id: call.id,
+                        type: "function",
+                        function: {
+                            name: call.name,
+                            arguments: JSON.stringify(call.args)
+                        }
+                    }))
+                };
+
+                const toolMessages = h.observation.toolResults.map(call => ({
+                    role: "tool",
+                    tool_call_id: call.id,
+                    content: JSON.stringify({
+                        success:call.success,
+                        result: call.result ?? null,
+                        error: call.error ?? null
+                    }),
+                }));
+
+                console.log("Tool calls para el paso --------------->", h.step, ":", assistantMessage.tool_calls);
+                console.log("Resultados de herramientas para el paso ----------->", h.step, ":", toolMessages);
+
+                return [assistantMessage, ...toolMessages];
             }
-            return ""
-        }).join("\n\n");
+            return [];
+        });
 
 
         const systemMessage = {
             role: "system",
             content: `
                 You are an autonomous AI agent.
-                You must decide the next action to achieve the goal.
-                Respond using tool calls when necessary.
-                If the goal is complete, respond with a final answer.
-                You must respond ONLY with valid JSON.
-
-                If using a tool:
-                {
-                    "type": "tool",
-                    "tool": "toolName",
-                    "args": {}
-                }
-
-                If the task is complete or you want to give a final answer:
-                {
-                    "type": "final",
-                    "output": "..."
-                }
+                If a tool is required to achieve the goal, call the tool.
+                If no tool is required, provide the final answer.                
             `
         };
 
@@ -131,60 +119,16 @@ export class AgentEngine {
 
                 === Execution State ===
                 Current Step: ${step} of ${maxSteps}
-
-                Previous Actions:
-                ${previousActions || "None"}
             `
         };
-
-        
-
-        // return `
-        // You are an AI agent designed to achieve a specific goal.
-        // You must respond ONLY with valid JSON.
-
-        // === Conversation Summary ===
-        // ${summary || "None"}
-
-        // === Known Facts ===
-        // ${facts.map(f => "- " + f).join("\n") || "None"}
-
-        // === Recent Messages ===
-        // ${messages.map(m => `${m.role}: ${m.content}`).join("\n")}
-
-        // === Agent Goal ===
-        // ${goal}
-
-        // === Execution State ===
-        // Current Step: ${step} of ${maxSteps}
-
-        // Previous Actions:
-        // ${previousActions || "None"}
-
-        // Decide the next action.
-
-        // If using a tool:
-        // {
-        // "type": "tool",
-        // "tool": "toolName",
-        // "args": {}
-        // }
-
-        // If the task is complete:
-        // {
-        // "type": "final",
-        // "output": "..."
-        // }
-        // `
-        // }
 
         return [
             systemMessage,
             runtimeMessage,
             ...messages.map(m => ({ role: m.role, content: m.content })),
-            // facts.length  > 0  ? facts : {role:"system", content: "No known facts"},
             ...facts,
-            ...summary
+            ...summary,
+            ...toolSequence
         ];
     };
 

@@ -32,6 +32,22 @@ export class AgentRuntime {
         this.tools    = tools;
         this.maxSteps = maxSteps;
     };
+    /**
+     * Maneja el input del usuario, lo guarda en la memoria y luego inicia el proceso del agente con ese input como objetivo.
+     * @param {*} userInput 
+     * @returns 
+     */
+    async handlerUserInput(userInput) {
+        await this.engine.memory.handlerUserInput(userInput); // guardo el input del usuario en la memoria
+
+        const state = this.createInitialState(userInput);
+
+        const runtimeOutput = await this.#run(state);
+
+        this.engine.memory.addAssistantResponse(runtimeOutput.output); // guardo la respuesta final del agente en la memoria
+
+        return runtimeOutput;
+    };
 
     createInitialState(goal) {
         return {
@@ -50,22 +66,21 @@ export class AgentRuntime {
         };
     };
 
+    // await this.memory.handlerUserInput(state.goal); // guardo el input del usuario en la memoria
 
     /**
      * Orquestar el proceso global y mantener métricas del sistema.
-     * @param {*} goal 
-     * @returns 
+     * @param {*} goal
+     * @returns
      */
-    run = async (goal) => {
+    #run = async (state) => {
 
-        const state = this.createInitialState(goal);
         state.status = "running";
 
         // Muy útil para debugging, te muestra con qué estado inicial está trabajando el agente.
         console.log("Estado inicial del agente:", state);
 
-
-        try {
+        // try {
             while(this.shouldContinue(state)) {
                 state.step++;
 
@@ -73,8 +88,12 @@ export class AgentRuntime {
 
                 const decision = await this.engine.step(state);  // llamas a tu capa de Cognición (Planner) devuelve una decision que puede ser usar una herramienta o finalizar con una respuesta.
 
+                console.log(`Paso ${state.step}: Decisión tomada:----------`, decision); // Esto es oro puro para debugging. Te muestra exactamente qué decisión tomó el agente en cada paso, lo cual es crucial para entender por qué el agente tomó cierta acción o por qué falló.
+
                 const observation = await this.processDecision(decision, state); // (Executor) procesa la decision, si es una decision de tipo "tool" ejecuta la herramienta y devuelve el resultado, si es una decision de tipo "final" devuelve la respuesta final.
 
+                console.log(`Paso ${state.step}: Observación obtenida:----------`, observation); // Esto es oro puro para debugging. Te muestra exactamente qué observación obtuvo el agente después de procesar su decisión, lo cual es crucial para entender cómo el agente está interactuando con su entorno y por qué tomó ciertas decisiones en pasos posteriores.
+                
                 // Métricas
                 if (decision.type === "tool") {
                     state.metrics.toolCalls++;
@@ -89,15 +108,13 @@ export class AgentRuntime {
 
                     decision: {
                         type: decision.type,
-                        tool: decision.tool ?? null,
-                        args: decision.args ?? null,
-                        output: decision.output ?? null
+                        output: decision.output ?? null,
+                        toolCalls: decision.toolCalls ?? null,
                     },
 
                     observation: {
                         success: observation.success ?? false,
-                        result: observation.result ?? null,
-                        error: observation.error ?? null,
+                        toolResults: observation.toolResults ?? null,
                         done: observation.done ?? false
                     },
 
@@ -115,14 +132,14 @@ export class AgentRuntime {
                 };
             };
 
-            if(state.step >= this.maxSteps && state.status === "running") {
+            if(state.step >= this.maxSteps && state.status === "running") { // Si llegamos al límite de pasos sin haber completado, marcamos como max_steps
                 state.status = "max_steps";
             };
 
-        } catch (error) {
-            state.status = "failed";
-            state.error = error.message || "Unknown error";
-        };
+        // } catch (error) {
+        //     state.status = "failed";
+        //     state.error = error.message || "Unknown error";
+        // };
 
         state.finishedAt = Date.now();
 
@@ -151,12 +168,12 @@ export class AgentRuntime {
      */
     async processDecision(decision, state) {
 
-        // console.log("Procesando decisión:--------------->", decision); // Esto es oro puro para debugging. Te muestra exactamente qué decisión está tratando de procesar el agente, lo cual es crucial para entender por qué el agente tomó cierta acción o por qué falló.
+        console.log("Procesando decisión:--------------->", decision); 
 
         if (decision.type === "final"){
             state.status = "completed";
 
-            return { 
+            return {
                 done: true,
                 output: decision.output,
                 success: true,
@@ -164,38 +181,54 @@ export class AgentRuntime {
         };
 
         // Si la decisión es usar una herramienta, ejecutamos esa herramienta y devolvemos el resultado.
-        if (decision.type === "tool"){ 
-            const tool = this.tools.has(decision.tool);
+        if (decision.type === "tool") {
 
-            // Validación de seguridad: Nos aseguramos de que la herramienta que el LLM quiere usar está en nuestra lista de herramientas permitidas.
-            //  Esto es crucial para evitar que el LLM ejecute código malicioso o acceda a datos sensibles.
-            if(!tool) {
-                // Si la herramienta no existe, el estado debería fallar si quiero que pare el agente,
-                //  o simplemente devolver un error en la observación y dejar que el LLM decida qué hacer con ese error 
-                // (por ejemplo, intentar otra herramienta o finalizar con un mensaje de error).
-                return { 
-                    done: false, 
-                    error: `Tool ${decision.tool} not found`,
-                    success: false,
+            const toolResults = [];
+
+            for (const tool of decision.toolCalls) {
+
+                if (!this.tools.has(tool.name)) {
+                    toolResults.push({
+                        id: tool.id,
+                        success: false,
+                        error: `Tool ${tool.name} not found`,
+                        result: null
+                    });
+                    continue;
+                };
+
+                // Aquí es donde realmente se ejecuta la herramienta. Esto puede ser una consulta a una base de datos, una llamada a una API externa, 
+                // o cualquier otra cosa que tu agente necesite hacer para cumplir su objetivo.
+                try {
+                    const result = await  this.tools.execute(tool.name, tool.args);
+
+                    console.log(`Resultado de ejecutar la herramienta "${tool.name}":`, result); // Esto es oro puro para debugging. Te muestra exactamente qué resultado obtuvo el agente al ejecutar la herramienta, lo cual es crucial para entender cómo el agente está interactuando con su entorno y por qué tomó ciertas decisiones en pasos posteriores.
+
+                    toolResults.push({
+                        id: tool.id,
+                        success: true,
+                        result,
+                        error: null
+                    });
+
+                    state.metrics.toolCalls++;
+
+                } catch (error) {
+                    toolResults.push({
+                        id: tool.id,
+                        success: false,
+                        result: null,
+                        error: error.message
+                    });
+
+                    state.metrics.totalErrors++;
                 };
             };
 
-            // Aquí es donde realmente se ejecuta la herramienta. Esto puede ser una consulta a una base de datos, una llamada a una API externa, 
-            // o cualquier otra cosa que tu agente necesite hacer para cumplir su objetivo.
-            try {
-                const result = await  this.tools.execute(decision.tool, decision.args);
-
-                return {
-                    success: true,
-                    done: false,
-                    result
-                };
-            } catch (error) {
-                return { 
-                    done: false,
-                    error: error.message || "Unknown error",
-                    success: false,
-                };
+            return {
+                success: toolResults.every(r => r.success),
+                done: false,
+                toolResults
             };
         };
 
@@ -208,8 +241,8 @@ export class AgentRuntime {
 
     /**
      *  Construye la respuesta final que se le va a devolver al usuario.
-     * @param {*} state 
-     * @returns 
+     * @param {*} state
+     * @returns
      */
     buildResponse(state) {
         const duration  = state.finishedAt - state.startedAt; // Es vital para telemetría y saber si tu agente es lento.

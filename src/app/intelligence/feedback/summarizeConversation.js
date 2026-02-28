@@ -13,7 +13,5 @@ export async function summarizeConversation(messages) {
     format: "text",
   });
 
-  // console.log("Resumen generado:", response.choices[0].message.content, "ata qe le entro ----> ", messages );
-
   return response.choices[0].message.content ;
 };

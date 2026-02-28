@@ -2,7 +2,6 @@ import { maybeExtractFacts } from "../intelligence/maybeExtractFacts";
 
 import { materializeFacts } from "./materializeFacts";
 
-import { resolveAction } from "../actions/actionResolve";
 import { summarizeConversation } from "../intelligence/feedback/summarizeConversation";
 
 const MAX_MESSAGES = 10;
@@ -283,12 +282,12 @@ export class Memory {
 
             // Función para resumir la conversación
             let summarytext = await summarizeConversation([
-                { ...this.state.summary[0] },
+                this.state.summary[0] ? {...this.state.summary[0]} : {role:"system", content: "No conversation summary"},
                 ...oldMessages,
             ]);
 
             this.state.summary =[ {
-                ...this.state.summary[0],
+                role:"system",
                 content: summarytext,
             }];
 
@@ -314,10 +313,8 @@ export class Memory {
      * Proveeo una manera de almacenar la salida del sistema
      */
     addAssistantResponse(response) {
-        this.#addAssistantMessage(response.content);
+        this.#addAssistantMessage(response);
     };
-
-
 
     get messages() {
         return this.state.messages;

@@ -1,5 +1,5 @@
 import { zodToJsonSchema } from "zod-to-json-schema";
-
+import { z } from "zod"
 
 export class ToolRegistry {
   constructor() {
@@ -11,9 +11,16 @@ export class ToolRegistry {
    * @param {*} name 
    * @param {*} handler 
    */
-  register(tool) {
-    if (!tool.name || !tool.handler || !tool.schema) {
-      throw new Error("Tool inválida");
+  register(tool = { 
+    name: "getCurrentDate",
+    description: "Returns the current system date",
+    // Aquí definimos el ESQUEMA (El contrato) de lo que esta herramienta espera como argumentos.
+    //  En este caso, no esperamos ningún argumento, pero podríamos definir esquemas más complejos para herramientas que sí los requieran.
+    schema:z.object({}), // No parameters needed for this tool
+    handler: async () => new Date().toISOString()
+  }) {
+    if (!tool.name || !tool.handler || !tool.schema || !tool.description) {
+      throw new Error("Tool inválida: falta name, description, schema o handler");
     };
 
     // Esto es crucial para evitar conflictos de nombres y asegurar que cada herramienta tenga un identificador único.
@@ -43,17 +50,26 @@ export class ToolRegistry {
   };
 
     /**
-   * Devuelve las definiciones de las herramientas registradas, para que el LLM sepa como usarlas
+   * Devuelve las definiciones de las herramientas registradas, para que el LLM sepa como usarlas.
+   * Una declaración formal de capacidades disponibles en este runtime.
    * @returns 
    */
   getToolManifest() {
-    return Array.from(this.tools.values()).map(tool => ({
-      name: tool.name,
-      description: tool.description,
-      schema: zodToJsonSchema( tool.schem, {
-          name: tool.name
-      }) // Zod no es JSON Schema. Debemos convertirlo a JSON Schema o a un formato simplificado.
-    }));
+    return Array.from(this.tools.values()).map(tool => {
+      const jsonSchema = zodToJsonSchema(tool.schema);
+    
+    // Eliminamos metadatos innecesarios para el LLM
+    const { $schema, ...cleanSchema } = jsonSchema;
+
+      return {
+        type: "function",
+        function: {
+          name: tool.name,
+          description: tool.description,
+          parameters: cleanSchema, // Schema limpio sin metadatos, para que el LLM pueda entender claramente qué argumentos necesita pasar al usar esta herramienta.
+        }
+      };
+    });
   };
 
   /**
@@ -63,6 +79,10 @@ export class ToolRegistry {
    * @returns 
    */
   async execute(name, args) {
+
+    console.log(`Ejecutando herramienta "${name}" con argumentos:--------------`, args);
+
+
 
     const tool = this.tools.get(name);
 

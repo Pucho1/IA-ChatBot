@@ -25,6 +25,7 @@ export function llmClient() {
         if (tools) {
             config.tools = tools;
             config.tool_choice = "auto"; // Dejo que el modelo decida automáticamente qué herramienta usar, si es que necesita usar alguna. Esto es crucial para que el modelo pueda decidir no usar herramientas si no las necesita, lo que puede resultar en respuestas más directas y rápidas cuando las herramientas no son necesarias.
+            config.temperature = 0; // Si hay herramientas, bajo la temperatura para que las respuestas sean más determinísticas, lo cual es importante para que el modelo tome decisiones más consistentes sobre cuándo usar herramientas y cuáles usar.
         };
 
         console.log("esto es lo que envio ---------->", config)
