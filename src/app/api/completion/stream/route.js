@@ -23,7 +23,7 @@ export async function POST(req) {
 
   const tools = new ToolRegistry(); // Una sola fuente de verdad
 
-  tools.register();
+  tools.registerTool();
 
   const agent = new AgentEngine({
     memory: memory,

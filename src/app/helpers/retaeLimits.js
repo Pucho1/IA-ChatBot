@@ -38,4 +38,28 @@ export function rateLimit(ip){
 
 	// Si hay más de RATE_LIMIT timestamps recientes, bloqueo la solicitud
 	return recent.length < RATE_LIMIT;
-}
+};
+
+    /**
+     *  Limpia y valida la respuesta del LLM, asegurándose de que sea un JSON válido y manejando errores de formato. Esto es crucial para evitar que el agente falle debido a respuestas mal formateadas del LLM, lo cual es común cuando el LLM no sigue estrictamente las instrucciones o cuando hay ruido en la generación.
+     * @param {*} rawResponse 
+     * @returns 
+     */
+function clearResponse(rawResponse) {  
+	const cleanedResponse = extractJSON(rawResponse);
+
+	if (!cleanedResponse) {
+		console.error("No se encontró JSON válido");
+		return new Response("Model format error", { status: 500 });
+	};
+
+	// try{
+	//     clearLlmOutput = JSON.parse(cleanedResponse); // esto puede traer un error de formato devido a la respuesta dda por la IA
+	// } catch(error){
+	//     // deberia tratar este error 
+	//     console.error("La IA envió basura, intentando limpiar...");
+	//     return new Response("Invalid JSON from LLM", { status: 500 });
+	// };
+
+	return JSON.parse(cleanedResponse);
+};

@@ -1,0 +1,13 @@
+{
+  "type": "plan",
+  "plan": {
+     "steps"   : [
+       {
+         "id": 1,
+         "description": "...",
+         "tool": "searchFlights",
+         "args": {}
+       }
+     ]
+  }
+}

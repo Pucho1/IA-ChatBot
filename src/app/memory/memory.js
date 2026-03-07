@@ -259,7 +259,9 @@ export class Memory {
      * @returns Estado actual de la memoria
      */
     getState(){
-        const sumaryMessage = this.summary || [{role:"system", content: "No conversation summary"}];
+        const sumaryMessage = this.state.summary?.length
+            ? this.state.summary
+            : [{ role: "system", content: "No conversation summary" }];
         
         return { 
             messages: this.messages,

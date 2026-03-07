@@ -1,6 +1,5 @@
 
 import { llmClient } from "../llm/llmClinet";
-import { extractJSON } from "../sanyty/verifyJsonResponse";
 
 
 export class AgentEngine {
@@ -12,15 +11,17 @@ export class AgentEngine {
     /**
      * Ejecuta un paso del agente, generando una decisión basada en el estado actual.
      * @param {*} state El estado actual del agente, que incluye el objetivo, el historial de acciones, etc.
-     * @returns 
+     * @returns
      */
     async step(state) {
         const conversationalState = this.memory.getState();
-
-        const toolManifest = this.tools.getToolManifest(); // Le pasamos al LLM la lista de herramientas disponibles para que pueda decidir cuál usar. Esto es crucial para que el LLM tome decisiones informadas y no intente usar herramientas que no existen.
+   
+        const toolManifest = this.tools.getToolManifest();
 
         // construyo el prompt con la memoria, que incluye el historial de mensajes, herramientas disponibles, etc.
         const prompt = this.buildPrompt(state, conversationalState);
+
+        // console.log("el manifesto de herramientas que se le pasa al LLM es este: ", toolManifest);
 
         const llmResponse = await llmClient().complete(
             {
@@ -34,17 +35,50 @@ export class AgentEngine {
 
         // Eeste mensaje puede ser de dos tipos (1) una respuesta final con un mensaje de texto,
         //  o (2) una decisión de usar una herramienta con el nombre de la herramienta y los argumentos para esa herramienta.
-        const message = llmResponse.choices[0].message; 
+        const message = llmResponse.choices[0].message;
+
+        console.log("Mensaje procesado del LLM: ", message.tool_calls);
 
         // 🔹 TOOL CALLS
         if (message.tool_calls?.length > 0) {
+
+            const toolCalls = message.tool_calls.map(call => {
+                // normalización del nombre
+                const name = call.function.name.split(".").pop();
+                return  {
+                    id: call.id,
+                    name,
+                    args: JSON.parse(call.function.arguments || "{}") // parseamos los argumentos de la herramienta, que vienen como string, a un objeto para poder usarlos luego al ejecutar la herramienta.
+                };
+            });
+
+            // Si es generatePlan → devolver tipo plan
+            // el nombre de la erramienta cuando es un plan sera siempre generatePlan, el LLM lo llama así en el prompt,
+            // entonces aquí lo verificamos para saber si es un plan o una llamada a herramienta normal.
+            if (toolCalls.length === 1 && toolCalls[0].name === "generatePlan") {
+
+                console.log("LLM ha decidido generar un plan con los siguientes pasosasdasdasdasdasd--------->>>>>>:", toolCalls);
+
+                // Los argumentos de generatePlan deben tener una estructura específica, 
+                // que es un array de pasos, cada paso con un nombre de herramienta y sus argumentos.
+                const args = toolCalls[0].args;
+
+                if (!args.steps || !Array.isArray(args.steps)) {
+                    return {
+                        type: "error",
+                        output: "Invalid plan structure returned by model"
+                    };
+                };
+
+                return {
+                    type: "plan",
+                    plan: args,
+                };
+            };
+
             return {
                 type: "tool",
-                toolCalls: message.tool_calls.map(call => ({
-                    id: call.id,
-                    name: call.function.name,
-                    args: JSON.parse(call.function.arguments)
-                }))
+                toolCalls,
             };
         };
 
@@ -55,7 +89,7 @@ export class AgentEngine {
 
         return {
             type: "error",
-            output: "Invalid model response"
+            output: "Invalid model response",
         };
     };
 
@@ -93,9 +127,6 @@ export class AgentEngine {
                     }),
                 }));
 
-                console.log("Tool calls para el paso --------------->", h.step, ":", assistantMessage.tool_calls);
-                console.log("Resultados de herramientas para el paso ----------->", h.step, ":", toolMessages);
-
                 return [assistantMessage, ...toolMessages];
             }
             return [];
@@ -105,9 +136,18 @@ export class AgentEngine {
         const systemMessage = {
             role: "system",
             content: `
-                You are an autonomous AI agent.
-                If a tool is required to achieve the goal, call the tool.
-                If no tool is required, provide the final answer.                
+               You are an autonomous AI agent.
+
+                You may respond with ONE of the following structured decisions:
+
+                If no tool is required, provide the final answer.
+                
+                2) Tool execution
+                Use tool calling.
+
+                Rules:
+                - Use exact tool names
+                - Return only the tool call when generating a plan
             `
         };
 
@@ -130,30 +170,5 @@ export class AgentEngine {
             ...summary,
             ...toolSequence
         ];
-    };
-
-
-    /**
-     *  Limpia y valida la respuesta del LLM, asegurándose de que sea un JSON válido y manejando errores de formato. Esto es crucial para evitar que el agente falle debido a respuestas mal formateadas del LLM, lo cual es común cuando el LLM no sigue estrictamente las instrucciones o cuando hay ruido en la generación.
-     * @param {*} rawResponse 
-     * @returns 
-     */
-    #clearResponse(rawResponse) {  
-        const cleanedResponse = extractJSON(rawResponse);
-
-        if (!cleanedResponse) {
-            console.error("No se encontró JSON válido");
-            return new Response("Model format error", { status: 500 });
-        };
-
-        // try{
-        //     clearLlmOutput = JSON.parse(cleanedResponse); // esto puede traer un error de formato devido a la respuesta dda por la IA
-        // } catch(error){
-        //     // deberia tratar este error 
-        //     console.error("La IA envió basura, intentando limpiar...");
-        //     return new Response("Invalid JSON from LLM", { status: 500 });
-        // };
-
-        return JSON.parse(cleanedResponse);
     };
 };
