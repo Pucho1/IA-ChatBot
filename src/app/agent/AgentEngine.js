@@ -13,13 +13,16 @@ export class AgentEngine {
      * @param {*} state El estado actual del agente, que incluye el objetivo, el historial de acciones, etc.
      * @returns
      */
-    async step(state) {
+    async generatePlan({ goal, history, tools }) {
+
         const conversationalState = this.memory.getState();
+
+        const prompt = this.buildPlannerPrompt(goal, history, conversationalState);
    
         const toolManifest = this.tools.getToolManifest();
 
         // construyo el prompt con la memoria, que incluye el historial de mensajes, herramientas disponibles, etc.
-        const prompt = this.buildPrompt(state, conversationalState);
+        // const prompt = this.buildPrompt(state, conversationalState);
 
         // console.log("el manifesto de herramientas que se le pasa al LLM es este: ", toolManifest);
 

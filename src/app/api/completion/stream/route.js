@@ -1,4 +1,4 @@
-import { AgentRuntime } from "@/app/agent/AgenRuntime/agentRuntime";
+import { AgentRuntime } from "@/app/agent/runtime/agentRuntime";
 import { AgentEngine } from "@/app/agent/AgentEngine";
 import { ToolRegistry } from "@/app/agent/tools/ToolRegistry";
 import { rateLimit } from "@/app/helpers/retaeLimits";

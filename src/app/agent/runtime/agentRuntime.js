@@ -77,67 +77,77 @@ export class AgentRuntime {
                 state.step++;
 
                 if(state.plan){
-                    // const step = state.plan.steps.find(step => step.status === "pending");
-                    const step = state.plan.steps[state.plan.currentStep];
+                    // detecto pasos ejecutables
+                    const executableSteps  = this.getExecutableSteps(state.plan);
 
-                    // Si no hay más pasos → pedir final al modelo
-                    if (!step) {
-                        const decision = await this.engine.step(state);
+                    // Si no hay más pasos ejecutables debemos saber si el plan ya se completó (no quedan pasos pendientes)
+                    //  o si el plan se quedó bloqueado 
+                    // (quedan pasos pendientes pero no hay ninguno ejecutable por dependencias no cumplidas o por errores).
+                    if (executableSteps.length === 0) {
 
+                        const pendingSteps = state.plan.steps.filter(s => s.status === "pending");
 
-                        if (decision.type === "final") {
-                            state.status = "completed";
+                        // no quedan steps && no hay pasos ejecutables → pedir final eso es que todo el plan ya se ejecutó. 
+                        if (pendingSteps.length === 0) {
+                            const decision = await this.engine.step(state);
 
-                            // Si el modelo devuelve una decisión de tipo "final" después de completar el plan, 
-                            // entonces consideramos que el agente ha cumplido su objetivo con éxito.
-                            // decimos que el objetvo se cumpio y exitosamente. 
-                            const observation = {
-                                toolResults: [], // no hay, porque no se ejecuto ninguna erramienta.
-                                done: true, // se cunplio el objetivo, entonces done es true.
-                                success: true, // la ejecución del plan fue exitosa, entonces success es true.
+                            if (decision.type === "final") {
+                                state.status = "completed";
+
+                                // Si el modelo devuelve una decisión de tipo "final" después de completar el plan,
+                                // entonces consideramos que el agente ha cumplido su objetivo con éxito.
+                                // decimos que el objetvo se cumpio y exitosamente.
+                                const observation = {
+                                    toolResults: [], // no hay, porque no se ejecuto ninguna erramienta.
+                                    done: true,     // se cunplio el objetivo, entonces done es true.
+                                    success: true, // la ejecución del plan fue exitosa, entonces success es true.
+                                };
+
+                                const record = this.#createStepRecord(state, decision, observation);
+
+                                state.history.push(record);
+
+                                // El agente ha completado su plan y ha llegado a una respuesta final, marcamos como completado.
+                                break;
                             };
 
-                            const record = this.#createStepRecord(state, decision, observation);
-
-                            state.history.push(record);
-
-                            // El agente ha completado su plan y ha llegado a una respuesta final, marcamos como completado.
+                            // Si el modelo no devuelve final después de completar el plan, es un error de contrato.
+                            state.status = "failed";
+                            state.error  = "No executable steps but plan still pending";
                             break;
                         };
-
-                        // Si el modelo no devuelve final después de completar el plan, es un error de contrato.
-                        state.status = "failed";
-                        state.error = "Model did not return final after plan completion";
-                        break;
                     };
 
-                    // Creo un id sintetico para cada paso del plan.
-                    const syntheticId = `plan_${state.step}_${step.id}`;
+                    for (const step of executableSteps) {
+                        // Creo un id sintetico para cada paso del plan.
+                        const syntheticId = `plan_${state.step}_${step.id}`;
 
-                    const toolCallDecision = {
-                        type: "tool",
-                        output: null,
-                        toolCalls: [
-                            {
-                                id: syntheticId,
-                                name: step.tool,
-                                args: step.args
-                            }
-                        ]
+                        const toolCallDecision = {
+                            type: "tool",
+                            output: null,
+                            toolCalls: [
+                                {
+                                    id: syntheticId,
+                                    name: step.tool,
+                                    args: step.args
+                                }
+                            ]
+                        };
+
+                        // Ejecuto el paso del plan, que es una llamada a herramienta.
+                        const observation = await this.executeTool(step, syntheticId);
+
+                        const record = this.#createStepRecord(state, toolCallDecision, observation);
+                        state.history.push(record);
+
+                        if (!observation.success) {
+                            step.status = "failed"
+                            continue;
+                        };
+                        
+                        step.status = "completed";
                     };
 
-                    // si no es final → ejecuto el paso del plan, que es una llamada a herramienta.
-                    const observation = await this.executeTool(step, syntheticId);
-
-                    const record = this.#createStepRecord(state, toolCallDecision, observation);
-                    state.history.push(record);
-
-                    if (!observation.success) {
-                        state.plan = null;
-                        continue;
-                    };
-
-                    state.plan.currentStep++;
                     continue;
                 };
 
@@ -148,7 +158,7 @@ export class AgentRuntime {
                     
                     state.plan = {
                         steps: decision.plan.steps,
-                        currentStep: 0,
+                        status: "pending",
                     };
                     const record = this.#createStepRecord(
                         state,
@@ -432,6 +442,36 @@ export class AgentRuntime {
         const answer = response.choices[0].message.content.trim().toUpperCase();
 
         return answer.includes("YES");
+    };
+
+    /**
+     * Devuelve los pasos que tienen status = pending AND todas sus dependencias están completadas.
+     * @param {*} plan 
+     * @returns Arry de pasos ejecutables.
+     */
+    getExecutableSteps(plan) {
+        return plan.steps.filter(step => {
+
+            // descartas cualquier paso que ya se esté ejecutando (running),
+            // que haya fallado (failed) o que ya esté terminado (completed). 
+            // Si no está pendiente, no nos interesa.
+            if (step.status !== "pending") {
+                return false;
+            };
+
+            const dependencies = step.depends_on || [];
+
+            // Verifica que todas las dependencias de este paso se hayan completado exitosamente
+            //  antes de considerar este paso como ejecutable.
+            const dependenciesCompleted = dependencies.every(depId => {
+                const depStep = plan.steps.find(s => s.id === depId);
+                return depStep && depStep.status === "completed";
+            });
+            
+            // Si el paso está pendiente y todas sus dependencias están completadas,
+            //  el filtro devuelve true.
+            return dependenciesCompleted;
+        });
     };
 
     /**
