@@ -2,9 +2,13 @@ import { AgentRuntime } from "@/app/agent/runtime/agentRuntime";
 import { AgentEngine } from "@/app/agent/AgentEngine";
 import { ToolRegistry } from "@/app/agent/tools/ToolRegistry";
 import { rateLimit } from "@/app/helpers/retaeLimits";
+import { createMemoryStore } from "@/app/agent/memory/memoryStore";
+import { AgentRouter } from "@/app/agent/routing/AgentRouter";
+
+import { cognitiveTools } from "@/app/agent/tools/cognitiveTools ";
+import { executionTools } from "@/app/agent/tools/executionTools";
 
 
-import { createMemoryStore } from "@/app/memory/memoryStore";
 
 const memoryStore = new Map();
 
@@ -19,21 +23,26 @@ export async function POST(req) {
 
   let { messages } = await req.json();
 
-  const memory = createMemoryStore(memoryStore, ip); // Asegura que la memoria para esta IP esté inicializada
+  const memory  = createMemoryStore(memoryStore, ip); // Asegura que la memoria para esta IP esté inicializada
 
-  const tools = new ToolRegistry(); // Una sola fuente de verdad
+  const registry   = new ToolRegistry(); // Una sola fuente de verdad
 
-  tools.registerTool();
+  const router  = new AgentRouter();
+
+  executionTools.forEach(tool => registry.registerExecution(tool));
+  cognitiveTools.forEach(tool => registry.registerCognitive(tool));
 
   const agent = new AgentEngine({
     memory: memory,
-    tools: tools, // Puedes pasar el registry si está disponible
+    registry, // Puedes pasar el registry si está disponible
   });
+
 
   const runtime = new AgentRuntime({
     engine : agent,
-    tools: tools,
-    maxSteps: 6
+    registry,
+    maxSteps: 6,
+    router : router,
   });
 
   const agentResponse = await runtime.handlerUserInput(messages);

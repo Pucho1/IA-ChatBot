@@ -3,9 +3,8 @@ import { llmClient } from "../llm/llmClinet";
 
 
 export class AgentEngine {
-    constructor({ memory, tools }) {
+    constructor({ memory }) {
         this.memory = memory;
-        this.tools = tools;
     };
 
     /**
@@ -13,93 +12,71 @@ export class AgentEngine {
      * @param {*} state El estado actual del agente, que incluye el objetivo, el historial de acciones, etc.
      * @returns
      */
-    async generatePlan({ goal, history, tools }) {
+    async generatePlan({ goal, history, registry, requiresTools }) {
 
         const conversationalState = this.memory.getState();
 
-        const prompt = this.buildPlannerPrompt(goal, history, conversationalState);
+        const prompt = this.buildPlannerPrompt(goal, registry, conversationalState);
+
+        const tools = registry.getCognitiveManifest();
    
-        const toolManifest = this.tools.getToolManifest();
-
-        // construyo el prompt con la memoria, que incluye el historial de mensajes, herramientas disponibles, etc.
-        // const prompt = this.buildPrompt(state, conversationalState);
-
-        // console.log("el manifesto de herramientas que se le pasa al LLM es este: ", toolManifest);
-
         const llmResponse = await llmClient().complete(
             {
                 messages: prompt, // construyo el prompt con la memoria y se lo paso al LLM, espero su respuesta
-                temperature: 0.7,
-                tools: toolManifest
+                temperature: 0,
+                tools,
+                tool_choice: {
+                    type: "function",
+                    function: { name: "generatePlan" }
+                },
             }
         );
 
-        console.log("Respuesta cruda del LLM: ", llmResponse.choices[0]);
+        const message = llmResponse.choices[0].message;
 
         // Eeste mensaje puede ser de dos tipos (1) una respuesta final con un mensaje de texto,
         //  o (2) una decisión de usar una herramienta con el nombre de la herramienta y los argumentos para esa herramienta.
-        const message = llmResponse.choices[0].message;
+        // const message = extractJSON(llmResponse.choices[0].message.content); 
 
-        console.log("Mensaje procesado del LLM: ", message.tool_calls);
+        console.log("Mensaje procesado del LLM: ", message);
 
-        // 🔹 TOOL CALLS
-        if (message.tool_calls?.length > 0) {
-
-            const toolCalls = message.tool_calls.map(call => {
-                // normalización del nombre
-                const name = call.function.name.split(".").pop();
-                return  {
-                    id: call.id,
-                    name,
-                    args: JSON.parse(call.function.arguments || "{}") // parseamos los argumentos de la herramienta, que vienen como string, a un objeto para poder usarlos luego al ejecutar la herramienta.
-                };
-            });
-
-            // Si es generatePlan → devolver tipo plan
-            // el nombre de la erramienta cuando es un plan sera siempre generatePlan, el LLM lo llama así en el prompt,
-            // entonces aquí lo verificamos para saber si es un plan o una llamada a herramienta normal.
-            if (toolCalls.length === 1 && toolCalls[0].name === "generatePlan") {
-
-                console.log("LLM ha decidido generar un plan con los siguientes pasosasdasdasdasdasd--------->>>>>>:", toolCalls);
-
-                // Los argumentos de generatePlan deben tener una estructura específica, 
-                // que es un array de pasos, cada paso con un nombre de herramienta y sus argumentos.
-                const args = toolCalls[0].args;
-
-                if (!args.steps || !Array.isArray(args.steps)) {
-                    return {
-                        type: "error",
-                        output: "Invalid plan structure returned by model"
-                    };
-                };
-
-                return {
-                    type: "plan",
-                    plan: args,
-                };
-            };
-
-            return {
-                type: "tool",
-                toolCalls,
-            };
+        if (!message.tool_calls || message.tool_calls.length === 0) {
+            throw new Error("Planner returned empty response");
         };
 
-        // 🔹 FINAL ANSWER
-        if (message.content) {
-            return { type: "final", output: message.content };
+        const call = message.tool_calls[0];
+
+        const args = JSON.parse(call.function.arguments || "{}");
+
+        if (!args.steps || !Array.isArray(args.steps)) {
+            throw new Error("Invalid plan structure");
         };
 
-        return {
-            type: "error",
-            output: "Invalid model response",
-        };
+        return args;
+    };
+
+    /**
+     * Genera la respuesta final para el usuario.
+     */
+    async generateFinalAnswer({ goal, history }) {
+
+        const conversationalState = this.memory.getState();
+
+        const prompt = this.buildFinalPrompt(goal, history, conversationalState);
+
+        const response = await llmClient().complete({
+            messages: prompt,
+            temperature: 0.3,
+        });
+
+        return response.choices[0].message.content;
     };
 
     /**
      * Construye el prompt para el LLM basado en el estado actual del agente y la memoria.
      */
     buildPrompt(runtimeState, conversationalState) {
+
         const { goal, step, maxSteps, history } = runtimeState;
         const { messages, facts, summary }      = conversationalState;
 
@@ -139,18 +116,35 @@ export class AgentEngine {
         const systemMessage = {
             role: "system",
             content: `
-               You are an autonomous AI agent.
+               You are an AI planning system.
 
-                You may respond with ONE of the following structured decisions:
+                Your task is to convert a user goal into a structured execution plan.
 
-                If no tool is required, provide the final answer.
-                
-                2) Tool execution
-                Use tool calling.
+                The plan must be returned as valid JSON.
 
                 Rules:
-                - Use exact tool names
-                - Return only the tool call when generating a plan
+                - Use ONLY available tools.
+                - Each step must reference a valid tool.
+                - Steps may belong to execution groups.
+                - Steps with the same group may be executed in parallel.
+                - Groups must be executed in ascending order.
+                - Do not execute tools. Only plan them.
+
+                Return ONLY JSON.
+
+                Plan format:
+
+                {
+                "steps": [
+                    {
+                        "id": number,
+                        "description": string,
+                        "tool": string,
+                        "args": object,
+                        "group": number
+                    }
+                ]
+                }
             `
         };
 
@@ -174,4 +168,137 @@ export class AgentEngine {
             ...toolSequence
         ];
     };
+
+    buildPlannerPrompt(goal, registry, conversationalState) {
+        console.log("estos son los argumento que le llegan al build planner promp: ====>", {registry} )
+
+        const { messages, facts, summary } = conversationalState;
+        const tools = registry.getExecutionManifest();
+
+        const toolDescriptions = tools
+            .map(t => {
+                return `
+                    Tool: ${t.function.name}
+                    Description: ${t.function.description}
+
+                    Parameters:
+                    ${JSON.stringify(t.function.parameters, null, 2)}
+                `;
+            });
+
+        return [
+            {
+                role: "system",
+                content: `
+                    You are an AI planning system.
+
+                    Your task is to generate a structured execution plan.
+
+                    IMPORTANT:
+                    - You MUST use the generatePlan tool
+                    - Do NOT return plain text
+                    - Do NOT explain anything
+
+                    Rules:
+                    - Use ONLY available tools
+                    - Each step must include:
+                    id, description, tool, args, depends_on
+                    - Use correct argument names based on tool definitions
+                    - Do NOT invent parameters
+
+                    this is the avaible tools:
+                    ${toolDescriptions}
+
+                    Generate the plan now.
+                `        
+            },
+
+            {
+                role: "system",
+                content: `
+                    Goal:
+                    ${goal}
+                `
+            },
+
+            ...messages,
+            ...facts,
+            ...summary,
+            // ...this.#buildToolHistory(history)
+        ];
+    };
+
+    buildFinalPrompt(goal, history, conversationalState) {
+ 
+        const { messages, facts, summary } = conversationalState;
+
+        const executionSummary = history
+            .map(step => JSON.stringify(step))
+            .join("\n");
+
+        return [
+            {
+                role: "system",
+                content: `
+                    You are an AI assistant.
+
+                    The agent has completed executing a plan.
+
+                    Your task is to provide a clear final answer to the user based on the execution results.
+                `
+            },
+
+            {
+                role: "system",
+                content: `Goal: ${goal}`
+            },
+
+            {
+                role: "system",
+                content: `
+                Execution history:
+
+                ${executionSummary}
+                `
+            },
+
+            ...summary,
+            ...facts,
+            ...messages
+        ];
+    };
+
+    // #buildToolHistory(history) {
+
+    //     return history.flatMap(h => {
+
+    //         if (h.decision.type !== "tool") {
+    //             return [];
+    //         }
+
+    //         const assistantMessage = {
+    //             role: "assistant",
+    //             tool_calls: h.decision.toolCalls.map(call => ({
+    //                 id: call.id,
+    //                 type: "function",
+    //                 function: {
+    //                     name: call.name,
+    //                     arguments: JSON.stringify(call.args)
+    //                 }
+    //             }))
+    //         };
+
+    //         const toolMessages = h.observation.toolResults.map(result => ({
+    //             role: "tool",
+    //             tool_call_id: result.id,
+    //             content: JSON.stringify({
+    //                 success: result.success,
+    //                 result: result.result ?? null,
+    //                 error: result.error ?? null
+    //             })
+    //         }));
+
+    //         return [assistantMessage, ...toolMessages];
+    //     });
+    // };
 };

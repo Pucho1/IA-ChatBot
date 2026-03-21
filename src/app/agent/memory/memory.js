@@ -1,8 +1,8 @@
-import { maybeExtractFacts } from "../intelligence/maybeExtractFacts";
 
+import { summarizeConversation } from "@/app/intelligence/feedback/summarizeConversation";
 import { materializeFacts } from "./materializeFacts";
+import { maybeExtractFacts } from "@/app/intelligence/maybeExtractFacts";
 
-import { summarizeConversation } from "../intelligence/feedback/summarizeConversation";
 
 const MAX_MESSAGES = 10;
 

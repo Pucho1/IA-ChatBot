@@ -6,14 +6,16 @@
  * @returns 
  */
 export function extractJSON(content) {
-  if (!content) return null;
 
-  // Quitar ```json fences si existen
-  content = content.replace(/```json/g, "")
-                   .replace(/```/g, "")
-                   .trim();
+  if (!content || typeof content !== "string") {
+    return null;
+  }
 
-  // Buscar primer { y último }
+  content = content
+    .replace(/```json/g, "")
+    .replace(/```/g, "")
+    .trim();
+
   const firstBrace = content.indexOf("{");
   const lastBrace = content.lastIndexOf("}");
 
@@ -22,4 +24,4 @@ export function extractJSON(content) {
   }
 
   return content.slice(firstBrace, lastBrace + 1);
-}
+};
