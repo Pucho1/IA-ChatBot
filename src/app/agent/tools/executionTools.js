@@ -13,9 +13,9 @@ export const executionTools = [
     name: "searchFlights",
     description: "Search available flights",
     schema: z.object({
-      date: z.string(),
-      from: z.string(),
-      to: z.string(),
+      date: z.coerce.string(),
+      from: z.coerce.string(),
+      to: z.coerce.string(),
     }),
     handler: async ({ date, from, to }) => {
       return [
@@ -29,8 +29,8 @@ export const executionTools = [
     name: "bookFlight",
     description: "Book a flight",
     schema: z.object({
-      flightId: z.string(),
-      passengerName: z.string(),
+      flightId: z.coerce.string(),
+      passengerName: z.coerce.string(),
     }),
     handler: async (data) => ({
       confirmation: "CONF-123",

@@ -7,6 +7,7 @@ import { AgentRouter } from "@/app/agent/routing/AgentRouter";
 
 import { cognitiveTools } from "@/app/agent/tools/cognitiveTools ";
 import { executionTools } from "@/app/agent/tools/executionTools";
+import { ArgumentNormalizer } from "@/app/agent/argumentHandler/ArgumentNormalizer";
 
 
 
@@ -21,13 +22,11 @@ export async function POST(req) {
 		return new Response("Too many requests", { status: 429 });
 	};
 
-  let { messages } = await req.json();
-
-  const memory  = createMemoryStore(memoryStore, ip); // Asegura que la memoria para esta IP esté inicializada
-
-  const registry   = new ToolRegistry(); // Una sola fuente de verdad
-
-  const router  = new AgentRouter();
+  let { messages }          = await req.json();
+  const memory              = createMemoryStore(memoryStore, ip); // Asegura que la memoria para esta IP esté inicializada
+  const registry            = new ToolRegistry(); // Una sola fuente de verdad
+  const argumentNormalizer  = new ArgumentNormalizer();
+  const router              = new AgentRouter();
 
   executionTools.forEach(tool => registry.registerExecution(tool));
   cognitiveTools.forEach(tool => registry.registerCognitive(tool));
@@ -42,7 +41,8 @@ export async function POST(req) {
     engine : agent,
     registry,
     maxSteps: 6,
-    router : router,
+    router,
+    argumentNormalizer,
   });
 
   const agentResponse = await runtime.handlerUserInput(messages);

@@ -77,11 +77,11 @@ export class ToolRegistry {
    * @returns boolean
    */
   has(name) {
-    return this.tools.has(name);
+    return this.executionTools.has(name);
   };
 
   get(name) {
-    return this.tools.get(name);
+    return this.executionTools.get(name);
   };
 
   listExecution() {

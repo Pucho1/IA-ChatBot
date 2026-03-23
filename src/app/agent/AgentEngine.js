@@ -36,7 +36,7 @@ export class AgentEngine {
 
         // Eeste mensaje puede ser de dos tipos (1) una respuesta final con un mensaje de texto,
         //  o (2) una decisión de usar una herramienta con el nombre de la herramienta y los argumentos para esa herramienta.
-        // const message = extractJSON(llmResponse.choices[0].message.content); 
+        // const message = extractJSON(llmResponse.choices[0].message.content);
 
         console.log("Mensaje procesado del LLM: ", message);
 

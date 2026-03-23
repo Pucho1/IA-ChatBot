@@ -7,11 +7,11 @@ export const cognitiveTools = [
     schema: z.object({
       steps: z.array(
         z.object({
-          id: z.number(),
-          description: z.string(),
-          tool: z.string(),
+          id: z.coerce.number(),
+          description: z.coerce.string(),
+          tool: z.coerce.string(),
           args: z.object({}).passthrough(),
-          depends_on: z.array(z.number()).default([]),
+          depends_on: z.array(z.coerce.number()).default([]),
         })
       ),
     }),

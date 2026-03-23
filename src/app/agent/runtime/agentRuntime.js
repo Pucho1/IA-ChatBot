@@ -18,11 +18,12 @@ import { PlanGraph } from "../execution/PlanGraph";
  */
 export class AgentRuntime {
 
-    constructor({ engine, registry, maxSteps = 8, router }) {
+    constructor({ engine, registry, maxSteps = 8, router, argumentNormalizer }) {
         this.engine   = engine;
         this.registry = registry;
         this.maxSteps = maxSteps;
         this.router   = router;
+        this.argumentNormalizer = argumentNormalizer;
     };
 
     /**
@@ -73,7 +74,7 @@ export class AgentRuntime {
 
         console.log("Estado inicial del agente:", state);
 
-        // 🔹 ROUTING (ANTES DE PLANIFICAR)
+        // 🔹 ROUTING (ANTES DE PLANIFICAR) elijo si es una concersacon o nocesito ejecutar una erramienta.
         const route = this.router.route(state.goal);
 
         const requiresTools = route === "execution";
@@ -104,8 +105,7 @@ export class AgentRuntime {
             };
         };
 
-
-        // si entro a este bucle es porque necesito tools si o si.
+        // flujo de ejecuccion puede que necesite erraminetas
         // try {
             while(this.shouldContinue(state)) {
                 state.step++;
@@ -119,7 +119,6 @@ export class AgentRuntime {
                         goal: state.goal,
                         history: state.history,
                         registry: this.registry,
-                        requiresTools,
                     });
 
                     console.log("Plan generado:", plan);
@@ -158,7 +157,7 @@ export class AgentRuntime {
                 /**
                  * 3️⃣ Si no hay pasos ejecutables
                  */
-                if (executableSteps.length === 0 && requiresTools) {
+                if (executableSteps.length === 0) {
 
                     /**
                     * Plan terminado
@@ -212,9 +211,20 @@ export class AgentRuntime {
                  * 4️⃣ Ejecutar pasos
                  */
                 for (const step of executableSteps) {
+
                     state.planGraph.markRunning(step.id);
 
-                    const observation = await this.executeTool(step, step.id);
+                    const tool = this.registry.get(step.tool);
+
+                    const normalizedArgs = await this.argumentNormalizer.normalize({
+                        args: step.args,
+                        schema: tool.schema,
+                    });
+
+                    const observation = await this.executeTool(
+                        { ...step, args: normalizedArgs },
+                        step.id,
+                    );
 
                     console.log("este es el resultado de ejecutar la erramienta =====>", observation);
 
