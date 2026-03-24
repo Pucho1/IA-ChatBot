@@ -72,6 +72,22 @@ export class AgentEngine {
         return response.choices[0].message.content;
     };
 
+
+        /**
+     * Genera la respuesta final para el usuario.
+     */
+    async generateMoreDataQuestion({ goal, missingFields }) {
+
+        const prompt = this.buildRequestDataPrompt(goal, missingFields );
+
+        const response = await llmClient().complete({
+            messages: prompt,
+            temperature: 0.7,
+        });
+
+        return response.choices[0].message.content;
+    };
+
     /**
      * Construye el prompt para el LLM basado en el estado actual del agente y la memoria.
      */
@@ -200,11 +216,17 @@ export class AgentEngine {
                     - Do NOT explain anything
 
                     Rules:
-                    - Use ONLY available tools
-                    - Each step must include:
-                    id, description, tool, args, depends_on
-                    - Use correct argument names based on tool definitions
-                    - Do NOT invent parameters
+                    - Use ONLY available tools.
+                    - Each step must include: id, description, tool, args, depends_on.
+                    - Use correct argument names based on tool definitions.
+                    - Do NOT invent parameters.
+                    - DO NOT invent values.
+                    - If a required parameter is missing → leave it out.
+
+                    CRITICAL RULES FOR TOOLS PARAMS:
+                    - If you do NOT have a value for a required parameter, DO NOT include it
+                    - NEVER invent placeholder values like "unknown", "Origen", "Destino"
+                    - It is better to leave arguments empty than to guess
 
                     this is the avaible tools:
                     ${toolDescriptions}
@@ -265,6 +287,37 @@ export class AgentEngine {
             ...summary,
             ...facts,
             ...messages
+        ];
+    };
+
+
+    buildRequestDataPrompt(goal, missingFields) {
+
+        const fieldsText = missingFields.map(f => `- ${f}`).join("\n");
+
+        return [
+            {
+                role: "system",
+                content: `
+                    You are an assistant.
+
+                    The system needs more information to execute a task.
+
+                    Missing fields: ${fieldsText}
+
+                    Generate a clear and concise question to ask the user.
+
+                    Rules:
+                    - Ask only for missing information
+                    - Be concise
+                    - Do not invent values
+                `
+            },
+
+            {
+                role: "system",
+                content: `User goal: ${goal}`
+            },
         ];
     };
 

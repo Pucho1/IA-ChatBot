@@ -120,6 +120,18 @@ export class PlanGraph {
     step.error = error;
   };
 
+    /**
+   * Marca a un step como bloqueado y guarda el por que.
+   * @param {*} stepId 
+   * @param {*} error 
+   */
+  markBlocked(stepId, blokedReazon) {
+    const step = this.#stepExist(stepId);
+
+    step.status = "blocked";
+    step.error = `El paso actual tiene el problema en: ${blokedReazon}`;
+  };
+
   /**
    * Verifico que todos los pasos esten completados.
    * @returns boolean

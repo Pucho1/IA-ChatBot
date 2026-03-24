@@ -1,5 +1,6 @@
 import { llmClient } from "@/app/llm/llmClinet";
 import { PlanGraph } from "../execution/PlanGraph";
+import { MissingInfoGuard } from "../execution/misinInformationHandler/detectMissingFields";
 
 /**
  * Inicializa estado
@@ -24,6 +25,7 @@ export class AgentRuntime {
         this.maxSteps = maxSteps;
         this.router   = router;
         this.argumentNormalizer = argumentNormalizer;
+        this.missingInfoGuard = new MissingInfoGuard();
     };
 
     /**
@@ -75,7 +77,7 @@ export class AgentRuntime {
         console.log("Estado inicial del agente:", state);
 
         // 🔹 ROUTING (ANTES DE PLANIFICAR) elijo si es una concersacon o nocesito ejecutar una erramienta.
-        const route = this.router.route(state.goal);
+        const route = this.router.route(state.goal, state);
 
         const requiresTools = route === "execution";
 
@@ -214,43 +216,78 @@ export class AgentRuntime {
 
                     state.planGraph.markRunning(step.id);
 
-                    const tool = this.registry.get(step.tool);
+                    const tool      = this.registry.get(step.tool);
+                    const args      = step.args;
+                    const schema    = tool.schema;
 
+
+                    // normalizo los datos de los argumentos por si traen errores
                     const normalizedArgs = await this.argumentNormalizer.normalize({
-                        args: step.args,
-                        schema: tool.schema,
+                        args,
+                        schema,
                     });
 
-                    const observation = await this.executeTool(
-                        { ...step, args: normalizedArgs },
-                        step.id,
-                    );
+                    // me sercioro de que todoso los argumento necesarios para que se eejcute la erramienta esten.
+                    const guardResult = this.missingInfoGuard.check({ args: normalizedArgs, schema  });
 
-                    console.log("este es el resultado de ejecutar la erramienta =====>", observation);
+                    console.log("argumento de detect missing fields======>>>>>", { guardResult })
+                    let observation;
+
+                    // si faltan datosen la respust del llm porque el user no los dio los dio se deben pedir nuevamente
+
+                    if (guardResult.blocked) {
+
+                        const question = await this.engine.generateMoreDataQuestion({
+                            goal: state.goal,
+                            missingFields: guardResult.missingFields
+                        });
+
+                        observation = {
+                            type: "blocked",
+                            success: true,
+                            result: question,
+                            error: null,
+                            missingFields: guardResult.missingFields,
+                            done: false
+                        };
+                    } else {
+                        const toolResult = await this.executeTool(
+                            { ...step, args: normalizedArgs },
+                            step.id
+                        );
+
+                        observation = {
+                            type: toolResult.success ? "success" : "error",
+                            ...toolResult,
+                            missingFields: []
+                        };
+                    };
+
+                    console.log("este es el resultado de ejecutar la erramienta o el resultado si fallo algo dentro de los parametro necesarios para ello =====>", observation);
 
                     // si la observacion es satisfactoria la marco como completada.
-                    if (observation.success) {
-
-                        state.planGraph.markCompleted(step.id, observation.result);
-
-                    } else {
-                        state.planGraph.markFailed(step.id, observation.error);
-
-                        state.metrics.totalErrors++;
-
-                        /**
-                         * Step falló → replanning
-                         */
-                        state.planGraph = null;
-                        state.status = "replanning";
-
-                        break;
+                    if (observation.type === "blocked") {
+                        state.planGraph.markBlocked(step.id, observation.missingFields);
+                        state.status = "waiting_for_input";
+                        // break;
                     };
+
+                    if (observation.type === "success") {
+                        state.planGraph.markCompleted(step.id, observation.result);
+                    };
+
+                    if (observation.type === "error") {
+                        state.planGraph.markFailed(step.id, observation.error);
+                        state.status = "replanning";
+                        state.metrics.totalErrors++;
+                        state.planGraph = null;
+                        // break;
+                    };
+
 
                     state.metrics.toolCalls++;
 
                     const record = this.#createStepRecord(state, step, observation);
-
                     state.history.push(record);
                 };
             };
@@ -408,13 +445,13 @@ export class AgentRuntime {
         const lastStep = state.history[state.history.length - 1];
 
         // Esto es oro puro para debugging. Te muestra exactamente qué pasó durante la ejecución del agente.
-        console.log("Estado final del agente:", state); 
+        console.log("Estado final del agente:", state, lastStep);
        
         return{
             // El agente se considera exitoso si llega a una decisión final antes de alcanzar el límite de pasos.
             //  Si alcanza el límite de pasos sin llegar a una decisión final, se considera que no tuvo éxito.
             success: state.status === "completed",
-            output:  lastStep?.decision?.output ?? null,
+            output:  state.status === "waiting_for_input"  ? lastStep?.observation?.toolResults : lastStep?.decision?.output ?? null ,
             error: state.error,
             metadata:{
                 duration,

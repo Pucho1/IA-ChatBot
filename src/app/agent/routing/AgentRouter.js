@@ -2,13 +2,14 @@ import routes from "./routesTypes"
 
 export class AgentRouter {
 
-    route(goal) {
+    route(goal, state) {
         console.log(routes);
 
         const normalizedGoal = goal.toLowerCase().trim();
+        const statusBlocked  = "waiting_for_input";
 
         // 🔹 1. conversación básica
-        if (this.#isConversation(normalizedGoal)) {
+        if (this.#isConversation(normalizedGoal) && state.status !== statusBlocked ) {
             return "conversation";
         };
 
