@@ -16,7 +16,7 @@ export class ArgumentNormalizer {
     }
 
     return result.data;
-  }
+  };
 
   #adaptToSchema(args, schema) {
     const shape = schema.shape;
