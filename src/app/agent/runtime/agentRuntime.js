@@ -1,4 +1,3 @@
-import { llmClient } from "@/app/llm/llmClinet";
 import { PlanGraph } from "../execution/PlanGraph";
 import { MissingInfoGuard } from "../execution/misinInformationHandler/detectMissingFields";
 
@@ -19,13 +18,14 @@ import { MissingInfoGuard } from "../execution/misinInformationHandler/detectMis
  */
 export class AgentRuntime {
 
-    constructor({ engine, registry, maxSteps = 8, router, argumentNormalizer }) {
-        this.engine   = engine;
-        this.registry = registry;
-        this.maxSteps = maxSteps;
-        this.router   = router;
+    constructor({ engine, registry, maxSteps = 8, router, argumentNormalizer, argumentResolver }) {
+        this.engine             = engine;
+        this.registry           = registry;
+        this.maxSteps           = maxSteps;
+        this.router             = router;
         this.argumentNormalizer = argumentNormalizer;
-        this.missingInfoGuard = new MissingInfoGuard();
+        this.missingInfoGuard   = new MissingInfoGuard();
+        this.argumentResolver   = argumentResolver;
     };
 
     /**
@@ -107,7 +107,6 @@ export class AgentRuntime {
             };
         };
 
-        // flujo de ejecuccion puede que necesite erraminetas
         // try {
             while(this.shouldContinue(state)) {
                 state.step++;
@@ -231,11 +230,17 @@ export class AgentRuntime {
                     const guardResult = this.missingInfoGuard.check({ args: normalizedArgs, schema  });
 
                     console.log("argumento de detect missing fields======>>>>>", { guardResult })
+
+                    const { resolvedArgs, missingFields } = this.argumentResolver.resolve({
+                        args: normalizedArgs,
+                        schema,
+                        state,
+                    });
+
                     let observation;
 
-                    // si faltan datosen la respust del llm porque el user no los dio los dio se deben pedir nuevamente
-
-                    if (guardResult.blocked) {
+                    // si faltan datosen la respuesta del llm porque el user no los dio se deben pedir nuevamente
+                    if (missingFields.length > 0) {
 
                         const question = await this.engine.generateMoreDataQuestion({
                             goal: state.goal,
@@ -247,12 +252,12 @@ export class AgentRuntime {
                             success: true,
                             result: question,
                             error: null,
-                            missingFields: guardResult.missingFields,
+                            missingFields,
                             done: false
                         };
                     } else {
                         const toolResult = await this.executeTool(
-                            { ...step, args: normalizedArgs },
+                            { ...step, args: resolvedArgs },
                             step.id
                         );
 
@@ -265,11 +270,13 @@ export class AgentRuntime {
 
                     console.log("este es el resultado de ejecutar la erramienta o el resultado si fallo algo dentro de los parametro necesarios para ello =====>", observation);
 
-                    // si la observacion es satisfactoria la marco como completada.
+                    let shouldStopExecution = false;
+                    // manejo el estado en el que esta mi paso segun el rsultado de la ejecucion
+                    //  de mi errramienta o de mi decicion
                     if (observation.type === "blocked") {
                         state.planGraph.markBlocked(step.id, observation.missingFields);
                         state.status = "waiting_for_input";
-                        // break;
+                        shouldStopExecution = true;
                     };
 
                     if (observation.type === "success") {
@@ -281,21 +288,25 @@ export class AgentRuntime {
                         state.status = "replanning";
                         state.metrics.totalErrors++;
                         state.planGraph = null;
-                        // break;
+                        shouldStopExecution = true;
                     };
-
 
                     state.metrics.toolCalls++;
 
                     const record = this.#createStepRecord(state, step, observation);
                     state.history.push(record);
+
+                    // 🔥 Corto la ejecucion para no seguir con mas pasos.
+                    if (shouldStopExecution) {
+                        break;
+                    };
                 };
             };
 
             /**
              * Si alcanzamos límite de pasos
              */
-            if(state.step >= this.maxSteps && state.status === "running") { 
+            if(state.step >= this.maxSteps && state.status === "running") {
                 state.status = "max_steps";
             };
 

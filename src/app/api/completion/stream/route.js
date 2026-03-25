@@ -8,7 +8,8 @@ import { AgentRouter } from "@/app/agent/routing/AgentRouter";
 import { cognitiveTools } from "@/app/agent/tools/cognitiveTools ";
 import { executionTools } from "@/app/agent/tools/executionTools";
 import { ArgumentNormalizer } from "@/app/agent/argumentHandler/ArgumentNormalizer";
-
+import { ArgumentResolver } from "@/app/agent/argumentHandler/ArgumentResolver";
+import { createDefaultResolvers } from "@/app/agent/argumentHandler/resolvers";
 
 
 const memoryStore = new Map();
@@ -28,6 +29,10 @@ export async function POST(req) {
   const argumentNormalizer  = new ArgumentNormalizer();
   const router              = new AgentRouter();
 
+  const argumentResolver    = new ArgumentResolver({
+    resolvers: createDefaultResolvers(),
+  });
+
   executionTools.forEach(tool => registry.registerExecution(tool));
   cognitiveTools.forEach(tool => registry.registerCognitive(tool));
 
@@ -43,6 +48,7 @@ export async function POST(req) {
     maxSteps: 6,
     router,
     argumentNormalizer,
+    argumentResolver,
   });
 
   const agentResponse = await runtime.handlerUserInput(messages);

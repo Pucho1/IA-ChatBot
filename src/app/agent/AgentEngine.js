@@ -186,8 +186,6 @@ export class AgentEngine {
     };
 
     buildPlannerPrompt(goal, registry, conversationalState) {
-        console.log("estos son los argumento que le llegan al build planner promp: ====>", {registry} )
-
         const { messages, facts, summary } = conversationalState;
         const tools = registry.getExecutionManifest();
 
