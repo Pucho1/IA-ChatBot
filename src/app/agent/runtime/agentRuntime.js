@@ -18,10 +18,9 @@ import { MissingInfoGuard } from "../execution/misinInformationHandler/detectMis
  */
 export class AgentRuntime {
 
-    constructor({ engine, registry, maxSteps = 8, router, argumentNormalizer, argumentResolver }) {
+    constructor({ engine, registry, router, argumentNormalizer, argumentResolver }) {
         this.engine             = engine;
         this.registry           = registry;
-        this.maxSteps           = maxSteps;
         this.router             = router;
         this.argumentNormalizer = argumentNormalizer;
         this.missingInfoGuard   = new MissingInfoGuard();
@@ -29,55 +28,18 @@ export class AgentRuntime {
     };
 
     /**
-     * Maneja el input del usuario, lo guarda en la memoria y luego inicia el proceso del agente con ese input como objetivo.
-     * @param {*} userInput 
-     * @returns 
-     */
-    async handlerUserInput(userInput) {
-        await this.engine.memory.handlerUserInput(userInput); // guardo el input del usuario en la memoria
-
-        const state = this.createInitialState(userInput);
-
-        const runtimeOutput = await this.#run(state);
-
-        this.engine.memory.addAssistantResponse(runtimeOutput.output); // guardo la respuesta final del agente en la memoria
-
-        return runtimeOutput;
-    };
-
-    createInitialState(goal) {
-        return {
-            goal,                     // El objetivo que el agente debe cumplir, se le pasa al inicio y es lo que guía su comportamiento.
-            planGraph : null,               // El plan que el agente genera para cumplir su objetivo.
-            status    : "idle",           // "idle" | "planning" | "executing" | "observing" | "evaluating" | "replanning" | "completed"
-            step      : 0,                  // Paso actual del agente, se incrementa en cada iteración del loop
-            maxSteps  : this.maxSteps,  // Pasos máximos permitidos
-            history   : [],              // Historial de decisiones y observaciones para mantener el contexto y Fuente única de verdad
-            error     : null,              // Información de error en caso de fallo
-            startedAt : Date.now(),    // Timestamp de inicio para calcular duración total
-            finishedAt: null,         // Timestamp de finalización
-            metrics   : {
-                totalErrors: 0,
-                toolCalls: 0
-            },
-            retryCount: 0,
-            maxRetries: 1,
-        };
-    };
-
-    /**
      * Orquestar el proceso global y mantener métricas del sistema.
      * @param {*} goal
      * @returns
      */
-    #run = async (state) => {
+    run = async (state) => {
 
         state.status = "running";
 
         console.log("Estado inicial del agente:", state);
 
         // 🔹 ROUTING (ANTES DE PLANIFICAR) elijo si es una concersacon o nocesito ejecutar una erramienta.
-        const route = this.router.route(state.goal, state);
+        const route = this.router.route(state.currentInput, state);
 
         const requiresTools = route === "execution";
 
@@ -155,6 +117,8 @@ export class AgentRuntime {
                  */
                 const executableSteps = state.planGraph.getExecutableSteps();
 
+                console.log("estos son los pasos ejecutables que =tengo de mi plan ==============>>>>", {executableSteps})
+
                 /**
                  * 3️⃣ Si no hay pasos ejecutables
                  */
@@ -194,7 +158,7 @@ export class AgentRuntime {
                         /**
                          * Goal no cumplido → replanning
                          */
-                        state.planGraph = null;
+                        // state.planGraph = null;
                         state.status = "replanning";
                         continue;
                     };
@@ -202,10 +166,9 @@ export class AgentRuntime {
                     /**
                      * Plan bloqueado → replanning
                      */
-                    state.planGraph = null;
-                    state.status = "replanning";
+                    // state.planGraph = null;
+                    state.status = "waiting_for_input";
                     continue;
-                    
                 };
 
                 /**
@@ -213,38 +176,61 @@ export class AgentRuntime {
                  */
                 for (const step of executableSteps) {
 
+                    // lopaso antes a pendinete de ejecucion si estaba bloqueado
+                    //  --- esto lo pudoiera hacer direcrtamente en el hrahp porque si estas ejecutable es que eres pending
+                    if (step.status === "blocked") {
+                        state.planGraph.markPending(step.id);
+                    };
+
                     state.planGraph.markRunning(step.id);
 
+                    /**
+                        id: 2,
+                        description: 'Buscar vuelos disponibles para el 10 de abril',
+                        tool: 'searchFlights',
+                        args: [Object],
+                        depends_on: [Array]
+                    */
+
                     const tool      = this.registry.get(step.tool);
-                    const args      = step.args;
-                    const schema    = tool.schema;
+                    const args      = step.args; // cada paso del plan generado por el llm tiene unos argumentos requeridos. argumeto del llm segun la tool enviada
+                    const schema    = tool.schema; // de la tool saco el schema como fuente de la verdad de los arg que realmennte definio la herramienta 
 
 
                     // normalizo los datos de los argumentos por si traen errores
+                    // ---- cambio los nombres de los ar por los reales
                     const normalizedArgs = await this.argumentNormalizer.normalize({
                         args,
                         schema,
                     });
 
-                    // me sercioro de que todoso los argumento necesarios para que se eejcute la erramienta esten.
+                    // me sercioro de que todos los argumento necesarios para que se eejcute la erramienta esten.
+                    // veo que esten todos
                     const guardResult = this.missingInfoGuard.check({ args: normalizedArgs, schema  });
 
                     console.log("argumento de detect missing fields======>>>>>", { guardResult })
 
-                    const { resolvedArgs, missingFields } = this.argumentResolver.resolve({
+                    // que no este ninguno vacio  y como no vuekvoi a generar el plan tengo que buscar dentro de mi contexto qu debe incluir 
+                    // lo nuevo escrito por e user 
+                    const { resolvedArgs, missingFields } = await this.argumentResolver.resolve({
                         args: normalizedArgs,
                         schema,
                         state,
                     });
 
-                    let observation;
+                    console.log("argumento resuletos y campos faltantes =======>", {resolvedArgs}, {missingFields})
 
-                    // si faltan datosen la respuesta del llm porque el user no los dio se deben pedir nuevamente
-                    if (missingFields.length > 0) {
+                    let observation;
+                    const isNewInput = state.currentInput !== state.goal;
+
+                    console.log("crterio de nueva respuesta=====>",{isNewInput}, missingFields.length )
+
+                    // si faltan datos en la respuesta del llm porque el user no los dio se deben pedir nuevamente
+                    if (missingFields.length > 0 && !isNewInput) {
 
                         const question = await this.engine.generateMoreDataQuestion({
                             goal: state.goal,
-                            missingFields: guardResult.missingFields
+                            missingFields,
                         });
 
                         observation = {
@@ -256,6 +242,8 @@ export class AgentRuntime {
                             done: false
                         };
                     } else {
+   
+                        state.planGraph.updateStepArgs(step.id, resolvedArgs);
                         const toolResult = await this.executeTool(
                             { ...step, args: resolvedArgs },
                             step.id
@@ -306,7 +294,7 @@ export class AgentRuntime {
             /**
              * Si alcanzamos límite de pasos
              */
-            if(state.step >= this.maxSteps && state.status === "running") {
+            if(state.step >= state.maxSteps && state.status === "running") {
                 state.status = "max_steps";
             };
 
@@ -380,9 +368,12 @@ export class AgentRuntime {
         return {
             step: state.step,
             decision: {
+                tool: decision.tool,
                 type: decision.type,
-                output: decision.output ?? null,
-                toolCalls: decision.toolCalls ?? []
+                description: decision.description ?? null,
+                toolCalls: decision.result ?? [],
+                args: decision.args ?? {},
+                output: decision.output ?? null
             },
             observation: {
                 success: observation.success ?? false,
@@ -444,7 +435,6 @@ export class AgentRuntime {
         // return answer.includes("YES");
         return !!decision.output;
     };
-
 
     /**
      *  Construye la respuesta final que se le va a devolver al usuario.

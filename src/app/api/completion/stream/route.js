@@ -10,9 +10,11 @@ import { executionTools } from "@/app/agent/tools/executionTools";
 import { ArgumentNormalizer } from "@/app/agent/argumentHandler/ArgumentNormalizer";
 import { ArgumentResolver } from "@/app/agent/argumentHandler/ArgumentResolver";
 import { createDefaultResolvers } from "@/app/agent/argumentHandler/resolvers";
+import { AgentSessionStore } from "@/app/agent/memory/AgentSessionStore";
 
 
-const memoryStore = new Map();
+const memoryStore = new Map(); // memria para el contexto del agente
+const sessionStore = new AgentSessionStore(); // memoria para el estado del agente
 
 export async function POST(req) {
 
@@ -28,8 +30,34 @@ export async function POST(req) {
   const registry            = new ToolRegistry(); // Una sola fuente de verdad
   const argumentNormalizer  = new ArgumentNormalizer();
   const router              = new AgentRouter();
+  let state                 = sessionStore.get(ip);
 
-  const argumentResolver    = new ArgumentResolver({
+  const isContinuing = state && state.status === "waiting_for_input";
+  // INIT SI NO EXISTE
+  if (!isContinuing) {
+    state = {
+      goal: messages,
+      currentInput: messages,
+      planGraph : null,        // El plan que el agente genera para cumplir su objetivo.
+      status    : "idle",      // "idle" | "planning" | "executing" | "observing" | "evaluating" | "replanning" | "completed"
+      step      : 0,           // Paso actual del agente, se incrementa en cada iteración del loop
+      maxSteps  : 6,           // Pasos máximos permitidos
+      history   : [],          // Historial de decisiones y observaciones para mantener el contexto y Fuente única de verdad
+      error     : null,        // Información de error en caso de fallo
+      startedAt : Date.now(),  // Timestamp de inicio para calcular duración total
+      finishedAt: null,        // Timestamp de finalización
+      metrics   : {
+          totalErrors: 0,
+          toolCalls: 0
+      },
+      retryCount: 0,
+      maxRetries: 1,
+    } 
+  } else {
+    state.currentInput = messages;
+  };
+
+  const argumentResolver = new ArgumentResolver({
     resolvers: createDefaultResolvers(),
   });
 
@@ -41,21 +69,25 @@ export async function POST(req) {
     registry, // Puedes pasar el registry si está disponible
   });
 
-
   const runtime = new AgentRuntime({
     engine : agent,
     registry,
-    maxSteps: 6,
     router,
     argumentNormalizer,
     argumentResolver,
+  //   initialState: session || null,
   });
 
-  const agentResponse = await runtime.handlerUserInput(messages);
+  memory.handlerUserInput(messages);
 
+  const agentResponse = await runtime.run(state); // manejo la nueva entrada del user teniendo en cuante el estado actual
 
+  memory.addAssistantResponse(agentResponse.output); // guardo la respuesta final del agente en la memoria
 
-  console.log("respuest del AgentRuntime ------->", agentResponse)
+  sessionStore.set(ip, state); // lo guardo despues porque el runtime lo mnodifica 
+  // si lo hiciera antes guardaria un estado antiguo de mi agente
+
+  console.log("respuest del AgentRuntime ------->", agentResponse);
 
 	// creo un encoder para convertir texto a Uint8Array --"bytes"-- que bes lo que puede viajar en streams
   // const encoder = new TextEncoder();

@@ -2,14 +2,16 @@ import routes from "./routesTypes"
 
 export class AgentRouter {
 
-    route(goal, state) {
-        console.log(routes);
+    route(currentInput, state) {
 
-        const normalizedGoal = goal.toLowerCase().trim();
+        const normalizedCurrentInput = currentInput.toLowerCase().trim();
         const statusBlocked  = "waiting_for_input";
 
+        // Si estamos esperando un dato, da igual si parece saludo, es EXECUTION
+        if (state.status === statusBlocked) return "execution";
+
         // 🔹 1. conversación básica
-        if (this.#isConversation(normalizedGoal) && state.status !== statusBlocked ) {
+        if (this.#isConversation(normalizedCurrentInput)) {
             return "conversation";
         };
 
@@ -26,18 +28,28 @@ export class AgentRouter {
     };
 
     #isGreeting(text) {
-        return [ "hola", "buenas", "hey", "nombre", "soy", "eres" ].some(word => text.includes(word));
+        const greetings = [ "hola", "buenas", "hey", "nombre", "soy", "eres" ];
+
+        return greetings.some(word => {
+            const regex = new RegExp(`\\b${word}\\b`, 'i');
+            return regex.test(text);
+        });
     };
 
     #isInstruction(text) {
-        return (
-            text.includes("no me escribas") ||
-            text.includes("a partir de ahora") ||
-            text.includes("responde en")
-        );
+       const instructions = ["no me escribas", "a partir de ahora", "responde en"];
+        return instructions.some(inst => text.includes(inst));
     };
 
     #isSmallTalk(text) {
-        return text.length < 15;
+        // Lista de palabras que NUNCA deben ser consideradas small talk
+        const executionKeywords = ["día", "hoy", "clima", "precio", "stock", "cuánto", "dónde", "cuándo"];
+        
+        const hasExecutionWord = executionKeywords.some(word => text.includes(word));
+        
+        // Si tiene una palabra clave, NO es small talk, es ejecución
+        if (hasExecutionWord) return false;
+
+        return text.length < 7;
     };
 };

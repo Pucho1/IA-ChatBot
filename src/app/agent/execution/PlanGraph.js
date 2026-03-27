@@ -67,7 +67,7 @@ export class PlanGraph {
       // descartas cualquier paso que ya se esté ejecutando (running),
       // que haya fallado (failed) o que ya esté terminado (completed). 
       // Si no está pendiente, no nos interesa.
-      if (step.status !== "pending") {
+      if (step.status !== "pending" && step.status !== "blocked") {
         return false;
       };
 
@@ -106,6 +106,7 @@ export class PlanGraph {
 
     step.status = "completed";
     step.result = result;
+    step.error = null;
   };
 
   /**
@@ -120,7 +121,7 @@ export class PlanGraph {
     step.error = error;
   };
 
-    /**
+  /**
    * Marca a un step como bloqueado y guarda el por que.
    * @param {*} stepId 
    * @param {*} error 
@@ -133,11 +134,21 @@ export class PlanGraph {
   };
 
   /**
+   * Marca a un step en pendiente de ejecucion.
+   * @param {*} stepId 
+   * @param {*} error 
+   */
+  markPending(stepId) {
+    const step = this.#stepExist(stepId);
+
+    step.status = "pending";
+  };
+
+  /**
    * Verifico que todos los pasos esten completados.
    * @returns boolean
    */
   isComplete() {
-
     return this.steps.every(step =>
       step.status === "completed"
     );
@@ -151,6 +162,11 @@ export class PlanGraph {
     return this.steps.some(step =>
       step.status === "failed"
     );
+  };
+
+  updateStepArgs(stepId, newArgs) {
+    const step = this.#stepExist(stepId);
+    step.args = newArgs;
   };
 
   /**
