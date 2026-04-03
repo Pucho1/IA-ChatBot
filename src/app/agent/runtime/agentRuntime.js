@@ -1,3 +1,5 @@
+import { is } from "zod/v4/locales";
+import { BehaviorManager } from "../behavior/BehaviorManager";
 import { PlanGraph } from "../execution/PlanGraph";
 import { MissingInfoGuard } from "../execution/misinInformationHandler/detectMissingFields";
 
@@ -18,13 +20,16 @@ import { MissingInfoGuard } from "../execution/misinInformationHandler/detectMis
  */
 export class AgentRuntime {
 
-    constructor({ engine, registry, router, argumentNormalizer, argumentResolver }) {
+    constructor({ engine, registry, router, argumentNormalizer, argumentResolver, intentClassifier, memory }) {
         this.engine             = engine;
         this.registry           = registry;
         this.router             = router;
         this.argumentNormalizer = argumentNormalizer;
         this.missingInfoGuard   = new MissingInfoGuard();
         this.argumentResolver   = argumentResolver;
+        this.classifier         = intentClassifier;
+        this.memory             = memory;
+        this.behaviorManager    = new BehaviorManager();
     };
 
     /**
@@ -36,267 +41,318 @@ export class AgentRuntime {
 
         state.status = "running";
 
-        console.log("Estado inicial del agente:", state);
 
         // 🔹 ROUTING (ANTES DE PLANIFICAR) elijo si es una concersacon o nocesito ejecutar una erramienta.
-        const route = this.router.route(state.currentInput, state);
+        const interpretation = await this.classifier.getIntent(state.currentInput, state);
+        const route = await this.router.route(interpretation);
+
+        const isContinuationResetet = {
+            ...interpretation,
+            isContinuation: state.goal === null ? false : interpretation.isContinuation 
+        };
+
+        console.log("interpretacion de la intencion del usuario segun el clasificador =======>", interpretation, {isContinuationResetet} );
+        console.log("Routing decision:", route);
+
+        // si es un cambio de objetivo limpio el plan anterior para que no me genere incoherencias y 
+        // le doy el nuevo objetivo como norte a mi agente
+        if (!isContinuationResetet.isContinuation && route === "execution") {
+            console.log("Detectado cambio de objetivo. Limpiando plan anterior...");
+
+            state.goal = state.currentInput; // El nuevo input es el nuevo norte
+            state.planGraph = null;          // Forzamos al Engine a crear un plan nuevo
+            state.status = "idle";           // Volvemos al estado inicial de planificación
+            state.step = 0;                  // Reseteamos el contador de pasos
+            // Mantenemos state.history o state.facts si queremos que el agente 
+            // recuerde lo anterior, pero el PLAN específico se borra.
+        };
+
+        if (isContinuationResetet.intent === "meta_instruction") {
+
+            this.behaviorManager.process(state.currentInput, state);
+
+            const statusPLanIsComplete = state.planGraph?.isComplete() ?? false;
+
+            state.planGraph = statusPLanIsComplete ? null : state.planGraph;
+            state.goal = statusPLanIsComplete ? null : state.goal;
+
+            // state.status = "completed";
+            state.finishedAt = Date.now();
+            state.metadata={
+                duration: state.finishedAt - state.startedAt,
+                steps: state.step,
+                status: state.status,
+                metrics: state.metrics,
+            };
+            state.error = null;
+
+            // Podríamos ser más específicos en la respuesta, indicando qué meta-instruction se aplicó
+            //  y cómo afectará el comportamiento del agente.
+            return this.buildResponse(state, "Entendido.");
+        };
+
+        state.status = state.status === "idle" ? "running" : state.status; // Si estaba idle por un cambio de objetivo, lo ponemos a running para que siga el proceso normal.
+
+        console.log("Estado inicial del agente:", state);
 
         const requiresTools = route === "execution";
 
-        console.log("Routing decision:", route);
-
-        // Router decide "si ejecutar"
+        // Router decide que no se requieren herramientas, genero respuesta final directa sin pasar por el loop de planificación y ejecución."
         if (!requiresTools) {
 
-            const output = await this.engine.generateFinalAnswer({
+            const response = await this.engine.generateFinalAnswer({
                 goal: state.goal,
                 history: state.history,
+                state,
             });
 
             state.status = "completed";
             state.finishedAt = Date.now();
-
-            return {
-                success: true,
-                output,
-                error: null,
-                metadata: {
-                    duration: state.finishedAt - state.startedAt,
-                    steps: state.step,
-                    status: state.status,
-                    metrics: state.metrics,
-                },
+            state.metadata={
+                duration: state.finishedAt - state.startedAt,
+                steps: state.step,
+                status: state.status,
+                metrics: state.metrics,
             };
+            state.error = null;
+
+            return this.buildResponse(state, response);
         };
 
         // try {
-            while(this.shouldContinue(state)) {
-                state.step++;
+        while(this.shouldContinue(state)) {
+            state.step++;
 
-                /**
-                 * 1️⃣ Si no hay plan → generarlo
-                 */
-                if (!state.planGraph) {
+            /**
+             * 1️⃣ Si no hay plan → generarlo
+             */
+            if (!state.planGraph) {
 
-                    const plan = await this.engine.generatePlan({
-                        goal: state.goal,
-                        history: state.history,
-                        registry: this.registry,
-                    });
+                const plan = await this.engine.generatePlan({
+                    goal: state.goal,
+                    history: state.history,
+                    registry: this.registry,
+                });
 
-                    console.log("Plan generado:", plan);
+                console.log("Plan generado:", plan);
 
-                    // 🔴 VALIDACIÓN CRÍTICA
-                    if (plan.steps.length === 0) {
+                // 🔴 VALIDACIÓN CRÍTICA
+                if (plan.steps.length === 0) {
 
-                        console.log("Plan inválido: se requieren tools");
+                    console.log("Plan inválido: se requieren tools");
 
-                        state.status = "replanning";
+                    state.status = "replanning";
 
-                        // OPCIÓN 1 (simple)
-                        // forzar reintento con contexto extra
+                    // OPCIÓN 1 (simple)
+                    // forzar reintento con contexto extra
 
-                        state.retryCount++;
+                    state.retryCount++;
 
-                        if (state.retryCount > state.maxRetries) {
-                            state.status = "failed";
-                            state.error = "Planner failed to generate executable plan";
-                            break;
-                        };
-
-                        continue;
-                    };
-
-                    state.planGraph = new PlanGraph(plan.steps);
-
-                    continue;
-                };
-
-                /**
-                 * 2️⃣ Obtener pasos ejecutables
-                 */
-                const executableSteps = state.planGraph.getExecutableSteps();
-
-                console.log("estos son los pasos ejecutables que =tengo de mi plan ==============>>>>", {executableSteps})
-
-                /**
-                 * 3️⃣ Si no hay pasos ejecutables
-                 */
-                if (executableSteps.length === 0) {
-
-                    /**
-                    * Plan terminado
-                    */
-                    if (state.planGraph.isComplete()) {
-
-                        // Como no tengo mas pasos y el el plan esta completado genero respuesta final.
-                        const output = await this.engine.generateFinalAnswer({
-                            goal: state.goal,
-                            history: state.history
-                        });
-
-
-                        console.log("esta es la rtespuesta final del agente------>", output)
-
-                        const goalSatisfied = await this.verifyGoal(state, { output });
-
-                        if (goalSatisfied) {
-
-                            state.status = "completed";
-
-                            const record = this.#createStepRecord(
-                                state,
-                                { type: "final", output },
-                                { success: true, done: true }
-                            );
-
-                            state.history.push(record);
-
-                            break;
-                        };
-
-                        /**
-                         * Goal no cumplido → replanning
-                         */
-                        // state.planGraph = null;
-                        state.status = "replanning";
-                        continue;
-                    };
-
-                    /**
-                     * Plan bloqueado → replanning
-                     */
-                    // state.planGraph = null;
-                    state.status = "waiting_for_input";
-                    continue;
-                };
-
-                /**
-                 * 4️⃣ Ejecutar pasos
-                 */
-                for (const step of executableSteps) {
-
-                    // lopaso antes a pendinete de ejecucion si estaba bloqueado
-                    //  --- esto lo pudoiera hacer direcrtamente en el hrahp porque si estas ejecutable es que eres pending
-                    if (step.status === "blocked") {
-                        state.planGraph.markPending(step.id);
-                    };
-
-                    state.planGraph.markRunning(step.id);
-
-                    /**
-                        id: 2,
-                        description: 'Buscar vuelos disponibles para el 10 de abril',
-                        tool: 'searchFlights',
-                        args: [Object],
-                        depends_on: [Array]
-                    */
-
-                    const tool      = this.registry.get(step.tool);
-                    const args      = step.args; // cada paso del plan generado por el llm tiene unos argumentos requeridos. argumeto del llm segun la tool enviada
-                    const schema    = tool.schema; // de la tool saco el schema como fuente de la verdad de los arg que realmennte definio la herramienta 
-
-
-                    // normalizo los datos de los argumentos por si traen errores
-                    // ---- cambio los nombres de los ar por los reales
-                    const normalizedArgs = await this.argumentNormalizer.normalize({
-                        args,
-                        schema,
-                    });
-
-                    // me sercioro de que todos los argumento necesarios para que se eejcute la erramienta esten.
-                    // veo que esten todos
-                    const guardResult = this.missingInfoGuard.check({ args: normalizedArgs, schema  });
-
-                    console.log("argumento de detect missing fields======>>>>>", { guardResult })
-
-                    // que no este ninguno vacio  y como no vuekvoi a generar el plan tengo que buscar dentro de mi contexto qu debe incluir 
-                    // lo nuevo escrito por e user 
-                    const { resolvedArgs, missingFields } = await this.argumentResolver.resolve({
-                        args: normalizedArgs,
-                        schema,
-                        state,
-                    });
-
-                    console.log("argumento resuletos y campos faltantes =======>", {resolvedArgs}, {missingFields})
-
-                    let observation;
-                    const isNewInput = state.currentInput !== state.goal;
-
-                    console.log("crterio de nueva respuesta=====>",{isNewInput}, missingFields.length )
-
-                    // si faltan datos en la respuesta del llm porque el user no los dio se deben pedir nuevamente
-                    if (missingFields.length > 0 && !isNewInput) {
-
-                        const question = await this.engine.generateMoreDataQuestion({
-                            goal: state.goal,
-                            missingFields,
-                        });
-
-                        observation = {
-                            type: "blocked",
-                            success: true,
-                            result: question,
-                            error: null,
-                            missingFields,
-                            done: false
-                        };
-                    } else {
-   
-                        state.planGraph.updateStepArgs(step.id, resolvedArgs);
-                        const toolResult = await this.executeTool(
-                            { ...step, args: resolvedArgs },
-                            step.id
-                        );
-
-                        observation = {
-                            type: toolResult.success ? "success" : "error",
-                            ...toolResult,
-                            missingFields: []
-                        };
-                    };
-
-                    console.log("este es el resultado de ejecutar la erramienta o el resultado si fallo algo dentro de los parametro necesarios para ello =====>", observation);
-
-                    let shouldStopExecution = false;
-                    // manejo el estado en el que esta mi paso segun el rsultado de la ejecucion
-                    //  de mi errramienta o de mi decicion
-                    if (observation.type === "blocked") {
-                        state.planGraph.markBlocked(step.id, observation.missingFields);
-                        state.status = "waiting_for_input";
-                        shouldStopExecution = true;
-                    };
-
-                    if (observation.type === "success") {
-                        state.planGraph.markCompleted(step.id, observation.result);
-                    };
-
-                    if (observation.type === "error") {
-                        state.planGraph.markFailed(step.id, observation.error);
-                        state.status = "replanning";
-                        state.metrics.totalErrors++;
-                        state.planGraph = null;
-                        shouldStopExecution = true;
-                    };
-
-                    state.metrics.toolCalls++;
-
-                    const record = this.#createStepRecord(state, step, observation);
-                    state.history.push(record);
-
-                    // 🔥 Corto la ejecucion para no seguir con mas pasos.
-                    if (shouldStopExecution) {
+                    if (state.retryCount > state.maxRetries) {
+                        state.status = "failed";
+                        state.error = "Planner failed to generate executable plan";
                         break;
                     };
+
+                    continue;
                 };
+
+                state.planGraph = new PlanGraph(plan.steps);
+
+                continue;
             };
 
             /**
-             * Si alcanzamos límite de pasos
+             * 2️⃣ Obtener pasos ejecutables
              */
-            if(state.step >= state.maxSteps && state.status === "running") {
-                state.status = "max_steps";
+            const executableSteps = state.planGraph.getExecutableSteps();
+
+            console.log("estos son los pasos ejecutables que tengo de mi plan ==============>>>>", {executableSteps})
+
+            /**
+             * 3️⃣ Si no hay pasos ejecutables
+             */
+            if (executableSteps.length === 0) {
+
+                /**
+                * Plan terminado
+                */
+                if (state.planGraph.isComplete()) {
+
+                    // Como no tengo mas pasos y el el plan esta completado genero respuesta final.
+                    const output = await this.engine.generateFinalAnswer({
+                        goal: state.goal,
+                        history: state.history,
+                        state,
+                    });
+
+
+                    console.log("esta es la rtespuesta final del agente------>", output)
+
+                    const goalSatisfied = await this.verifyGoal(state, { output });
+
+                    if (goalSatisfied) {
+
+                        state.status = "completed";
+
+                        const record = this.#createStepRecord(
+                            state,
+                            { type: "final", output },
+                            { success: true, done: true }
+                        );
+
+                        state.history.push(record);
+
+                        break;
+                    };
+
+                    /**
+                     * Goal no cumplido → replanning
+                     */
+                    // state.planGraph = null;
+                    state.status = "replanning";
+                    continue;
+                };
+
+                /**
+                 * Plan bloqueado → replanning
+                 */
+                // state.planGraph = null;
+                state.status = "waiting_for_input";
+                continue;
             };
+
+            /**
+             * 4️⃣ Ejecutar pasos
+             */
+            for (const step of executableSteps) {
+
+                // lopaso antes a pendinete de ejecucion si estaba bloqueado
+                //  --- esto lo pudoiera hacer direcrtamente en el hrahp porque si estas ejecutable es que eres pending
+                if (step.status === "blocked") {
+                    state.planGraph.markPending(step.id);
+                };
+
+                state.planGraph.markRunning(step.id);
+
+                /**
+                    id: 2,
+                    description: 'Buscar vuelos disponibles para el 10 de abril',
+                    tool: 'searchFlights',
+                    args: [Object],
+                    depends_on: [Array]
+                */
+
+                const tool      = this.registry.get(step.tool);
+                const args      = step.args; // cada paso del plan generado por el llm tiene unos argumentos requeridos. argumeto del llm segun la tool enviada
+                const schema    = tool.schema; // de la tool saco el schema como fuente de la verdad de los arg que realmennte definio la herramienta 
+
+
+                // normalizo los datos de los argumentos por si traen errores
+                // ---- cambio los nombres de los ar por los reales
+                const normalizedArgs = await this.argumentNormalizer.normalize({
+                    args,
+                    schema,
+                });
+
+                // me sercioro de que todos los argumento necesarios para que se eejcute la erramienta esten.
+                // veo que esten todos
+                const guardResult = this.missingInfoGuard.check({ args: normalizedArgs, schema  });
+
+                console.log("argumento de detect missing fields======>>>>>", { guardResult })
+
+                // que no este ninguno vacio  y como no vuekvoi a generar el plan tengo que buscar dentro de mi contexto qu debe incluir 
+                // lo nuevo escrito por e user 
+                const { resolvedArgs, missingFields } = await this.argumentResolver.resolve({
+                    args: normalizedArgs,
+                    schema,
+                    state,
+                });
+
+                console.log("argumento resuletos y campos faltantes =======>", {resolvedArgs}, {missingFields})
+
+                if(resolvedArgs){
+                    step.args = resolvedArgs;
+                };
+                
+                let observation;
+                const isNewInput = state.currentInput !== state.goal;
+
+                console.log("crterio de nueva respuesta=====>",{isNewInput}, missingFields.length )
+
+                // si faltan datos en la respuesta del llm porque el user no los dio se deben pedir nuevamente
+                if (missingFields.length > 0 ) {
+
+                    const question = await this.engine.generateMoreDataQuestion({
+                        goal: state.goal,
+                        missingFields,
+                    });
+
+                    observation = {
+                        type: "blocked",
+                        success: true,
+                        result: question,
+                        error: null,
+                        missingFields,
+                        done: false
+                    };
+                } else {
+
+                    state.planGraph.updateStepArgs(step.id, resolvedArgs);
+
+                    const toolResult = await this.executeTool(
+                        { ...step, args: resolvedArgs },
+                        step.id
+                    );
+
+                    observation = {
+                        type: toolResult.success ? "success" : "error",
+                        ...toolResult,
+                        missingFields: []
+                    };
+                };
+
+                console.log("este es el resultado de ejecutar la erramienta o el resultado si fallo algo dentro de los parametro necesarios para ello =====>", observation);
+
+                let shouldStopExecution = false;
+                // manejo el estado en el que esta mi paso segun el rsultado de la ejecucion
+                //  de mi errramienta o de mi decicion
+                if (observation.type === "blocked") {
+                    state.planGraph.markBlocked(step.id, observation.missingFields);
+                    state.status = "waiting_for_input";
+                    shouldStopExecution = true;
+                };
+
+                if (observation.type === "success") {
+                    state.planGraph.markCompleted(step.id, observation.result);
+                };
+
+                if (observation.type === "error") {
+                    state.planGraph.markFailed(step.id, observation.error);
+                    state.status = "replanning";
+                    state.metrics.totalErrors++;
+                    state.planGraph = null;
+                    shouldStopExecution = true;
+                };
+
+                state.metrics.toolCalls++;
+
+                const record = this.#createStepRecord(state, step, observation);
+                state.history.push(record);
+
+                // 🔥 Corto la ejecucion para no seguir con mas pasos.
+                if (shouldStopExecution) {
+                    break;
+                };
+            };
+        };
+
+        /**
+         * Si alcanzamos límite de pasos
+         */
+        if(state.step >= state.maxSteps && state.status === "running") {
+            state.status = "max_steps";
+        };
 
         // } catch (error) {
         //     state.status = "failed";
@@ -394,8 +450,6 @@ export class AgentRuntime {
      */
     async verifyGoal(state, decision) {
 
-        console.log("decicion ------------>", decision)
-
         // Si el agente ha hecho llamadas a herramientas y no hay output en la decisión final,
         // entonces consideramos que el goal no se cumplió.
         // if (!decision.output) {
@@ -441,18 +495,29 @@ export class AgentRuntime {
      * @param {*} state
      * @returns
      */
-    buildResponse(state) {
+    buildResponse(state, response) {
         const duration  = state.finishedAt - state.startedAt; // Es vital para telemetría y saber si tu agente es lento.
         const lastStep = state.history[state.history.length - 1];
 
         // Esto es oro puro para debugging. Te muestra exactamente qué pasó durante la ejecución del agente.
-        console.log("Estado final del agente:", state, lastStep);
-       
+        console.log("Estado final del agente:", {state}, {lastStep}, {response});
+
+        const output = response ? response : state.status === "waiting_for_input"  ? lastStep?.observation?.toolResults : lastStep?.decision?.output ?? null;
+            
+        this.memory.addAssistantResponse(output); // guardo la respuesta final del agente en la memoria
+
+        // Actualizo la última interacción en el estado para que el clasificador de intención tenga acceso a ella en la próxima iteración.  
+        state.lastInteraction = {
+            text: output,
+            source: "system",
+            timestamp: Date.now()
+        };
+
         return{
             // El agente se considera exitoso si llega a una decisión final antes de alcanzar el límite de pasos.
             //  Si alcanza el límite de pasos sin llegar a una decisión final, se considera que no tuvo éxito.
             success: state.status === "completed",
-            output:  state.status === "waiting_for_input"  ? lastStep?.observation?.toolResults : lastStep?.decision?.output ?? null ,
+            output: output, 
             error: state.error,
             metadata:{
                 duration,

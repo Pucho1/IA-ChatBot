@@ -11,6 +11,7 @@ import { ArgumentNormalizer } from "@/app/agent/argumentHandler/ArgumentNormaliz
 import { ArgumentResolver } from "@/app/agent/argumentHandler/ArgumentResolver";
 import { createDefaultResolvers } from "@/app/agent/argumentHandler/resolvers";
 import { AgentSessionStore } from "@/app/agent/memory/AgentSessionStore";
+import { IntentClassifier } from "@/app/agent/routing/intenteClassifier/IntentClassifier";
 
 
 const memoryStore = new Map(); // memria para el contexto del agente
@@ -29,19 +30,18 @@ export async function POST(req) {
   const memory              = createMemoryStore(memoryStore, ip); // Asegura que la memoria para esta IP esté inicializada
   const registry            = new ToolRegistry(); // Una sola fuente de verdad
   const argumentNormalizer  = new ArgumentNormalizer();
+  const intentClassifier    = new IntentClassifier();
   const router              = new AgentRouter();
   let state                 = sessionStore.get(ip);
 
-  const isContinuing = state && state.status === "waiting_for_input";
-  // INIT SI NO EXISTE
-  if (!isContinuing) {
+  if (!state) {
     state = {
-      goal: messages,
+      goal: null,              // El objetivo que el agente debe cumplir, se actualiza dinámicamente
       currentInput: messages,
       planGraph : null,        // El plan que el agente genera para cumplir su objetivo.
       status    : "idle",      // "idle" | "planning" | "executing" | "observing" | "evaluating" | "replanning" | "completed"
       step      : 0,           // Paso actual del agente, se incrementa en cada iteración del loop
-      maxSteps  : 6,           // Pasos máximos permitidos
+      maxSteps  : 10,           // Pasos máximos permitidos
       history   : [],          // Historial de decisiones y observaciones para mantener el contexto y Fuente única de verdad
       error     : null,        // Información de error en caso de fallo
       startedAt : Date.now(),  // Timestamp de inicio para calcular duración total
@@ -52,6 +52,9 @@ export async function POST(req) {
       },
       retryCount: 0,
       maxRetries: 1,
+      lastInteraction: {},
+      detectedIntent: null,
+
     } 
   } else {
     state.currentInput = messages;
@@ -65,7 +68,7 @@ export async function POST(req) {
   cognitiveTools.forEach(tool => registry.registerCognitive(tool));
 
   const agent = new AgentEngine({
-    memory: memory,
+    memory,
     registry, // Puedes pasar el registry si está disponible
   });
 
@@ -75,14 +78,13 @@ export async function POST(req) {
     router,
     argumentNormalizer,
     argumentResolver,
-  //   initialState: session || null,
+    intentClassifier,
+    memory,
   });
 
   memory.handlerUserInput(messages);
 
   const agentResponse = await runtime.run(state); // manejo la nueva entrada del user teniendo en cuante el estado actual
-
-  memory.addAssistantResponse(agentResponse.output); // guardo la respuesta final del agente en la memoria
 
   sessionStore.set(ip, state); // lo guardo despues porque el runtime lo mnodifica 
   // si lo hiciera antes guardaria un estado antiguo de mi agente

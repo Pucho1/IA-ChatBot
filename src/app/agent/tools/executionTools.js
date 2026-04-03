@@ -37,4 +37,48 @@ export const executionTools = [
       ...data,
     }),
   },
+
+  {
+    name: "getWeather",
+    description: "Obtiene las condiciones climáticas actuales de una ubicación específica.",
+    
+    // Esquema para el ArgumentNormalizer y el LLM
+    schema: z.object({
+      location: z.string()
+        .describe("La ciudad y el país, ej: 'Madrid, ES' o 'Buenos Aires'"),
+      unit: z.enum(["celsius", "fahrenheit"])
+        .default("celsius")
+        .describe("La unidad de medida de temperatura")
+    }),
+
+    // Handler determinista (Tu "Músculo")
+    handler: async ({ location, unit }) => {
+      try {
+        // Aquí conectarías con una API real como OpenWeather o WeatherAPI
+        // Por ahora, simulamos la respuesta determinista
+        console.log(`[WeatherTool] Consultando clima para: ${location} en ${unit}...`);
+        
+        const mockData = {
+          Madrid: { temp: 22, condition: "Soleado", humidity: 40 },
+          London: { temp: 15, condition: "Luvioso", humidity: 80 },
+          default: { temp: 20, condition: "Despejado", humidity: 50 }
+        };
+
+        const city = location.split(',')[0].trim();
+        const data = mockData[city] || mockData.default;
+
+        return {
+          location: location,
+          temperature: unit === "fahrenheit" ? (data.temp * 9/5) + 32 : data.temp,
+          unit: unit,
+          condition: data.condition,
+          humidity: `${data.humidity}%`,
+          timestamp: new Date().toISOString()
+        };
+      } catch (error) {
+        throw new Error(`Error al obtener el clima: ${error.message}`);
+      }
+    }
+  },
+
 ];

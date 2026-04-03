@@ -1,10 +1,11 @@
 
 import { llmClient } from "../llm/llmClinet";
-
+import { BehaviorManager } from "./behavior/BehaviorManager";
 
 export class AgentEngine {
     constructor({ memory }) {
         this.memory = memory;
+        this.behaviorManager = new BehaviorManager();
     };
 
     /**
@@ -58,11 +59,11 @@ export class AgentEngine {
     /**
      * Genera la respuesta final para el usuario.
      */
-    async generateFinalAnswer({ goal, history }) {
+    async generateFinalAnswer({ goal, history, state }) {
 
         const conversationalState = this.memory.getState();
 
-        const prompt = this.buildFinalPrompt(goal, history, conversationalState);
+        const prompt = this.buildFinalPrompt(goal, history, conversationalState, state);
 
         const response = await llmClient().complete({
             messages: prompt,
@@ -248,9 +249,10 @@ export class AgentEngine {
         ];
     };
 
-    buildFinalPrompt(goal, history, conversationalState) {
+    buildFinalPrompt(goal, history, conversationalState, state) {
  
         const { messages, facts, summary } = conversationalState;
+        const behaviorInstructions = this.behaviorManager.buildPromptInstructions(state);
 
         const executionSummary = history
             .map(step => JSON.stringify(step))
@@ -280,6 +282,11 @@ export class AgentEngine {
 
                 ${executionSummary}
                 `
+            },
+
+            {
+                role: "system",
+                content: behaviorInstructions
             },
 
             ...summary,

@@ -17,7 +17,7 @@ const MAX_MESSAGES = 10;
 export class Memory {
 
     constructor(state) {
-        this.state = state;
+        this.state = state; // {summary: [], facts: [], messages: []}
     };
 
     #addUserMessage(content) {
@@ -311,10 +311,13 @@ export class Memory {
         await this.#updateSummaryIfNeeded();
     };
 
+    
     /**
-     * Proveeo una manera de almacenar la salida del sistema
+     *  Gestiona que hacer con la respuesta del agente.
+     * @param {*} response 
+     * @param {*} source 
      */
-    addAssistantResponse(response) {
+    addAssistantResponse(response, source = 'system') {
         this.#addAssistantMessage(response);
     };
 

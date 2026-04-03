@@ -36,7 +36,9 @@ export class LLMResolver {
 
     if (stringValue.toLowerCase() === "null") return null;
 
-    return stringValue.trim();
+    return stringValue
+      .trim()
+      .replace(/^"+|"+$/g, "") // 🔥 quitar comillas externas;
   };
 
   /**
