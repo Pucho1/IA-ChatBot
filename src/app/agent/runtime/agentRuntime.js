@@ -1,5 +1,6 @@
-import { is } from "zod/v4/locales";
 import { BehaviorManager } from "../behavior/BehaviorManager";
+import { ReferenceResolver } from "../cognition/reference/ReferenceResolver";
+import { TransitionResolver } from "../cognition/transition/TransitionResolver";
 import { PlanGraph } from "../execution/PlanGraph";
 import { MissingInfoGuard } from "../execution/misinInformationHandler/detectMissingFields";
 
@@ -20,7 +21,15 @@ import { MissingInfoGuard } from "../execution/misinInformationHandler/detectMis
  */
 export class AgentRuntime {
 
-    constructor({ engine, registry, router, argumentNormalizer, argumentResolver, intentClassifier, memory }) {
+    constructor({ 
+        engine, 
+        registry, 
+        router, 
+        argumentNormalizer, 
+        argumentResolver, 
+        intentClassifier, 
+        memory,
+    }) {
         this.engine             = engine;
         this.registry           = registry;
         this.router             = router;
@@ -30,6 +39,8 @@ export class AgentRuntime {
         this.classifier         = intentClassifier;
         this.memory             = memory;
         this.behaviorManager    = new BehaviorManager();
+        this.referenceResolver  = new ReferenceResolver();
+        this.transitionResolver = new TransitionResolver();
     };
 
     /**
@@ -39,24 +50,59 @@ export class AgentRuntime {
      */
     run = async (state) => {
 
+        // Inicializo el contexto de referencia y el estado del agente. El contexto de referencia es 
+        // crucial para que el agente pueda entender a qué se refiere el usuario
+        // con términos como "esto", "lo anterior", etc., 
+        // lo cual es fundamental para mantener una conversación coherente y relevante.
+        state.context = {
+           ...state.context,
+            reference: null,
+        };
+
+        // El estado del agente se inicializa con la información proporcionada, 
+        // y se establece el status en "running" para indicar que el agente está activo y procesando la solicitud.
         state.status = "running";
 
 
-        // 🔹 ROUTING (ANTES DE PLANIFICAR) elijo si es una concersacon o nocesito ejecutar una erramienta.
+        // 🔹 ROUTING (ANTES DE PLANIFICAR) elijo si es una conversacion o necesito ejecutar una herramienta. 
+        // ---Intent = significado lingüístico---  /// Intent dice: qué quiere el usuario
         const interpretation = await this.classifier.getIntent(state.currentInput, state);
-        const route = await this.router.route(interpretation);
+        
+        // 🔹 ResolverReference antes de planificar elijo si es una referencia.
+        // ---Referencia = significado contextual---  /// ResolverReference dice: a qué se refiere el usuario con eso, este, lo anterior, etc.
+        const reference = this.referenceResolver.resolve({
+            input: state.currentInput,
+            state,
+        });
+
+        // 🔹 Transition dice: qué hago ahora
+        const transition = this.transitionResolver.resolve({
+            intent: interpretation,
+            reference,
+            state,
+        });
+
+        console.log("Resultado del TransitionResolver =======>", transition );
+        console.log("interpretacion de ResolverReference =======>", reference );
+
+        if (transition.type === "SELECT_OPTION") {
+            state.context.selected = reference.value;
+            state.context.skipSearch = true;
+        };
 
         const isContinuationResetet = {
             ...interpretation,
-            isContinuation: state.goal === null ? false : interpretation.isContinuation 
+            isContinuation: state.goal === null ? false : interpretation.isContinuation,
         };
+
+        const route = await this.router.route(isContinuationResetet);
 
         console.log("interpretacion de la intencion del usuario segun el clasificador =======>", interpretation, {isContinuationResetet} );
         console.log("Routing decision:", route);
 
-        // si es un cambio de objetivo limpio el plan anterior para que no me genere incoherencias y 
+        // si es un cambio de objetivo limpio el plan anterior para que no me genere incoherencias y
         // le doy el nuevo objetivo como norte a mi agente
-        if (!isContinuationResetet.isContinuation && route === "execution") {
+        if (transition.shouldResetGoal) {
             console.log("Detectado cambio de objetivo. Limpiando plan anterior...");
 
             state.goal = state.currentInput; // El nuevo input es el nuevo norte
@@ -129,7 +175,7 @@ export class AgentRuntime {
             if (!state.planGraph) {
 
                 const plan = await this.engine.generatePlan({
-                    goal: state.goal,
+                    state,
                     history: state.history,
                     registry: this.registry,
                 });
@@ -193,6 +239,7 @@ export class AgentRuntime {
 
                     if (goalSatisfied) {
 
+                        console.log("!!!----Goal verificado como cumplido. Finalizando agente...-----!!!");
                         state.status = "completed";
 
                         const record = this.#createStepRecord(
@@ -211,6 +258,7 @@ export class AgentRuntime {
                      */
                     // state.planGraph = null;
                     state.status = "replanning";
+                    console.log(" ⚠️⚠️⚠️ Plan completo pero goal NO cumplido → REPLAN ⚠️⚠️⚠️");
                     continue;
                 };
 
@@ -234,14 +282,6 @@ export class AgentRuntime {
                 };
 
                 state.planGraph.markRunning(step.id);
-
-                /**
-                    id: 2,
-                    description: 'Buscar vuelos disponibles para el 10 de abril',
-                    tool: 'searchFlights',
-                    args: [Object],
-                    depends_on: [Array]
-                */
 
                 const tool      = this.registry.get(step.tool);
                 const args      = step.args; // cada paso del plan generado por el llm tiene unos argumentos requeridos. argumeto del llm segun la tool enviada
@@ -276,9 +316,6 @@ export class AgentRuntime {
                 };
                 
                 let observation;
-                const isNewInput = state.currentInput !== state.goal;
-
-                console.log("crterio de nueva respuesta=====>",{isNewInput}, missingFields.length )
 
                 // si faltan datos en la respuesta del llm porque el user no los dio se deben pedir nuevamente
                 if (missingFields.length > 0 ) {
@@ -304,12 +341,37 @@ export class AgentRuntime {
                         { ...step, args: resolvedArgs },
                         step.id
                     );
+                    
+                    // 🧠 INTERACTION GATING (GENÉRICO)
+                    if (Array.isArray(toolResult.result) && toolResult.result.length > 1) {
 
-                    observation = {
-                        type: toolResult.success ? "success" : "error",
-                        ...toolResult,
-                        missingFields: []
-                    };
+                        // guardo opciones en contexto
+                        state.context.options = toolResult.result;
+
+                        const selectionQuestion = await this.engine.generateSelectionQuestion({
+                            goal: state.goal,
+                            options: toolResult.result,
+                        });
+
+                        // a futuro esto no me conviene ya que una herramienta puede devolver una lista 
+                        // pero no necesariamente es para que el usuario elija una opción, 
+                        // puede ser simplemente una lista de resultados.
+                        observation = {
+                            type: "selection_required",
+                            success: true,
+                            result: selectionQuestion,
+                            raw: toolResult.result,
+                            missingFields: ["selection"],
+                            done: false,
+                        };
+
+                    } else {
+                        observation = {
+                            type: toolResult.success ? "success" : "error",
+                            ...toolResult,
+                            missingFields: [],
+                        };
+                    }
                 };
 
                 console.log("este es el resultado de ejecutar la erramienta o el resultado si fallo algo dentro de los parametro necesarios para ello =====>", observation);
@@ -322,6 +384,16 @@ export class AgentRuntime {
                     state.status = "waiting_for_input";
                     shouldStopExecution = true;
                 };
+
+                if (observation.type === "selection_required") {
+                    state.planGraph.markCompleted(step.id, observation.raw);
+
+                    state.context.options = observation.raw;
+                    state.context.awaitingSelection = true;
+
+                    state.status = "waiting_for_input";
+                    shouldStopExecution = true;
+                }
 
                 if (observation.type === "success") {
                     state.planGraph.markCompleted(step.id, observation.result);
@@ -428,6 +500,7 @@ export class AgentRuntime {
                 type: decision.type,
                 description: decision.description ?? null,
                 toolCalls: decision.result ?? [],
+                row: decision.raw ?? null,
                 args: decision.args ?? {},
                 output: decision.output ?? null
             },
@@ -527,4 +600,5 @@ export class AgentRuntime {
             },
         };
     };
+
 };

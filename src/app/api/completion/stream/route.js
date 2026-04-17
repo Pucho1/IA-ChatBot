@@ -54,7 +54,9 @@ export async function POST(req) {
       maxRetries: 1,
       lastInteraction: {},
       detectedIntent: null,
-
+      context: {
+        reference: null, // Información de referencia que el agente puede usar para tomar decisiones, se actualiza dinámicamente.
+      },
     } 
   } else {
     state.currentInput = messages;

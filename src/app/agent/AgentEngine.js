@@ -13,11 +13,11 @@ export class AgentEngine {
      * @param {*} state El estado actual del agente, que incluye el objetivo, el historial de acciones, etc.
      * @returns
      */
-    async generatePlan({ goal, history, registry, requiresTools }) {
+    async generatePlan({ state, registry, requiresTools }) {
 
         const conversationalState = this.memory.getState();
 
-        const prompt = this.buildPlannerPrompt(goal, registry, conversationalState);
+        const prompt = this.buildPlannerPrompt(state, registry, conversationalState);
 
         const tools = registry.getCognitiveManifest();
    
@@ -38,8 +38,6 @@ export class AgentEngine {
         // Eeste mensaje puede ser de dos tipos (1) una respuesta final con un mensaje de texto,
         //  o (2) una decisión de usar una herramienta con el nombre de la herramienta y los argumentos para esa herramienta.
         // const message = extractJSON(llmResponse.choices[0].message.content);
-
-        console.log("Mensaje procesado del LLM: ", message);
 
         if (!message.tool_calls || message.tool_calls.length === 0) {
             throw new Error("Planner returned empty response");
@@ -73,13 +71,33 @@ export class AgentEngine {
         return response.choices[0].message.content;
     };
 
-
-        /**
+    /**
      * Genera la respuesta final para el usuario.
      */
     async generateMoreDataQuestion({ goal, missingFields }) {
 
         const prompt = this.buildRequestDataPrompt(goal, missingFields );
+
+        const response = await llmClient().complete({
+            messages: prompt,
+            temperature: 0.7,
+        });
+
+        return response.choices[0].message.content;
+    };
+
+
+    /**
+     *  Genera una pregunta para que el usuario seleccione una opción de una lista de resultados,
+     *  basada en el objetivo del agente y las opciones disponibles.
+     * @param {*} param0 
+     * @returns 
+     */
+    async generateSelectionQuestion({ goal, options }) {
+
+        const prompt = this.buildSelectionPrompt(goal, options);
+
+        console.log("Generando pregunta de selección con las opciones, y con el prompt:", options, prompt);
 
         const response = await llmClient().complete({
             messages: prompt,
@@ -186,7 +204,15 @@ export class AgentEngine {
         ];
     };
 
-    buildPlannerPrompt(goal, registry, conversationalState) {
+    /**
+     * Construye el prompt para el LLM basado en el estado actual del agente y la memoria, 
+     * específicamente para la fase de planificación.
+     * @param {*} state 
+     * @param {*} registry 
+     * @param {*} conversationalState 
+     * @returns 
+     */
+    buildPlannerPrompt(state, registry, conversationalState) {
         const { messages, facts, summary } = conversationalState;
         const tools = registry.getExecutionManifest();
 
@@ -200,6 +226,8 @@ export class AgentEngine {
                     ${JSON.stringify(t.function.parameters, null, 2)}
                 `;
             });
+        
+        
 
         return [
             {
@@ -227,6 +255,12 @@ export class AgentEngine {
                     - NEVER invent placeholder values like "unknown", "Origen", "Destino"
                     - It is better to leave arguments empty than to guess
 
+                    PLANNING RULES:
+                    - If context.selected exists:
+                    → DO NOT call searchFlights again
+                    → Continue with booking step
+                    - NEVER call a tool that already appears in "Executed tools"
+
                     this is the avaible tools:
                     ${toolDescriptions}
 
@@ -237,8 +271,15 @@ export class AgentEngine {
             {
                 role: "system",
                 content: `
-                    Goal:
-                    ${goal}
+                   CURRENT STATE:
+
+                    - Goal: ${state.goal}
+                    - Status: ${state.status}
+
+                    ${this.#buildOperationalContext(state)}
+
+                    - Last tool result:
+                    ${this.extractLastToolResult(state.history)}
                 `
             },
 
@@ -249,6 +290,10 @@ export class AgentEngine {
         ];
     };
 
+    /***
+     * Construye el prompt para generar la respuesta final al usuario, 
+     * incluyendo un resumen de la ejecución y el comportamiento del agente.
+     */
     buildFinalPrompt(goal, history, conversationalState, state) {
  
         const { messages, facts, summary } = conversationalState;
@@ -295,7 +340,13 @@ export class AgentEngine {
         ];
     };
 
-
+    /**
+     *  Construye el prompt para generar una pregunta al usuario solicitando información adicional,
+     *  basada en los campos faltantes necesarios para ejecutar una herramienta y el objetivo del agente.
+     * @param {*} goal 
+     * @param {*} missingFields 
+     * @returns 
+     */
     buildRequestDataPrompt(goal, missingFields) {
 
         const fieldsText = missingFields.map(f => `- ${f}`).join("\n");
@@ -324,6 +375,72 @@ export class AgentEngine {
                 content: `User goal: ${goal}`
             },
         ];
+    };
+
+    /**
+     *  Construye el prompt para generar una pregunta al usuario solicitando que seleccione una opción de una lista de resultados,
+     *  basada en el objetivo del agente y las opciones disponibles.
+     * @param {*} goal 
+     * @param {*} options 
+     * @returns 
+     */
+    buildSelectionPrompt(goal, options) {
+
+        const optionsText = options.map((item, i) => {
+            return `${i + 1}. ${JSON.stringify(item)}`;
+        }).join("\n");
+
+
+        return [
+            {
+                role: "system",
+                content: `
+                    You are an assistant.
+
+                    The system has executed a tool that returned multiple options.
+
+                    Available options: ${optionsText}
+
+                    Generate a clear and concise question to ask the user to select one of the options.
+
+                    Rules:
+                    - List the options clearly
+                    - Ask the user to select one option
+                    - Be concise
+                `
+            },
+
+            {
+                role: "system",
+                content: `User goal: ${goal}`
+            },
+        ];
+    };
+
+    extractLastToolResult(history) {
+        return history
+            .filter(h => h.decision?.tool)
+            .map(h => h.decision.tool);
+    };
+
+    #buildOperationalContext(state) {
+        if (state.context?.selected) {
+            return `
+                SELECTED RESULT:
+
+                A previous step already produced results and the user selected one option.
+
+                Selected item:
+                - flightId: ${state.context.selected.flightId}
+
+                IMPORTANT:
+                - This means searchFlights has already been executed
+                - DO NOT call searchFlights again
+                - Continue the flow using this selection
+                `;
+        };
+
+        return `No selected result.`;
     };
 
     // #buildToolHistory(history) {

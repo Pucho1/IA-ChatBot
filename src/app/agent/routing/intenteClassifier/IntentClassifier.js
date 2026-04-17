@@ -3,199 +3,288 @@ import { extractJSON } from "@/app/sanyty/verifyJsonResponse";
 
 export class IntentClassifier {
   async getIntent(input, state) {
-
-    console.log("ultimo mensaje del sistema:", state.lastInteraction );
-
     const prompt = this.#buildPrompt(input, state);
 
     try {
-
-      // if (!state.goal) return {
-      //   intent: "social",
-      //   isContinuation: false,
-      //   confidence: 1,
-      //   source: "no_goal_fallback",
-      // };
-
       const response = await llmClient().complete({
         messages: [{ role: "user", content: prompt }],
         temperature: 0,
-        // Asegúrate de que tu llmClient soporte el parámetro format o adáptalo
-        response_format: { type: "json_object" } 
+        response_format: { type: "json_object" }
       });
 
-      // Ajuste según la estructura típica de respuesta
       const content = response.choices[0].message.content;
       const jsonString = extractJSON(content);
       const llmResult = JSON.parse(jsonString);
 
-      const unificado = this.#unificarValidacion(llmResult, state.lastInteraction?.text || "", input);
-
-      return unificado;
-
+      return this.#unificarValidacion(
+        llmResult,
+        state.lastInteraction?.text || "",
+        input,
+        state
+      );
     } catch (error) {
-      console.error("Error en clasificación:", error);
+      console.error("Error en clasificacion:", error);
+      
       return {
-        intent: "social", // Asumimos que es social por defecto, para no bloquear la conversación
+        intent: "social",
         isContinuation: false,
         confidence: 0,
-      }; // Fallback seguro
-    };
+      };
+    }
   };
 
-
-  /**
-   *  Construye un prompt detallado para que el LLM clasifique correctamente la intención del usuario,
-   *  usando el contexto del estado actual del agente.
-   * @param {*} input 
-   * @param {*} state 
-   * @returns String con el prompt completo para la clasificación de intención
-   */
   #buildPrompt(input, state) {
-
     const lastMessage = state.lastInteraction?.text || "Ninguno";
 
-    return`
-     CONTEXTO:\n' +
-        - Meta declarada: "${state.goal}"
-        - Estado del sistema: ${state.status}
-        - ENTRADA DEL USUARIO: "${input}"
-        - ÚLTIMO MENSAJE DE RESPUESTA DEL SISTEMA: "${lastMessage}"
-        - HISTORIAL DE INTERACCIONES PREVIAS: ${state.history ? state.history.map(h => `"${h.text}"`).join(" | ") : "Ninguno"}
+    return `
+      CONTEXTO:
+      - Meta declarada: "${state.goal}"
+      - Estado del sistema: ${state.status}
+      - ENTRADA DEL USUARIO: "${input}"
+      - ULTIMO MENSAJE DE RESPUESTA DEL SISTEMA: "${lastMessage}"
+      - HISTORIAL DE INTERACCIONES PREVIAS: ${state.history ? state.history.map((h) => `"${h.text}"`).join(" | ") : "Ninguno"}
 
-      EClasifica en DOS dimensiones separadas:
+      Clasifica en DOS dimensiones separadas:
 
-      1. INTENT (qué quiere el usuario):
+      1. INTENT (que quiere el usuario):
       - social (saludo, nombre, etc)
-      - provide_info  el usuario aporta información útil para completar una tarea
+      - provide_info (el usuario aporta informacion util para completar una tarea)
       - request_action (pide hacer algo)
-      - meta-instruction (cambia cómo debe comportarse el asistente), Ej: "responde corto", "no hables mucho", "llámame X"
+      - meta_instruction (cambia como debe comportarse el asistente)
 
       2. CONTINUATION:
-      - true → si continúa el contexto actual
-      - false → si inicia algo nuevo
+      - true si continua el contexto actual
+      - false si inicia algo nuevo
 
       Devuelve JSON:
       {
         "intent": "social | provide_info | request_action | meta_instruction",
-        "isContinuation": true/false,
-        "confidence": 0-1
+        "isContinuation": true,
+        "confidence": 0.0
       }
 
-      EJEMPLOS DE RESPUESTA:
-      Input: "¿Qué día es hoy?"
+      EJEMPLOS:
+      Input: "Que dia es hoy?"
       Output:
-        {
-          "intent": "request_action",
-          "isContinuation": false
-        }
+      {
+        "intent": "request_action",
+        "isContinuation": false,
+        "confidence": 0.95
+      }
 
       Input: "10 de abril"
       Output:
-        {
-          "intent": "provide_info",
-          "isContinuation": true
-        }
+      {
+        "intent": "provide_info",
+        "isContinuation": true,
+        "confidence": 0.95
+      }
 
       Input: "a partir de ahora responde corto"
       Output:
-        {
-          "intent": "meta_instruction",
-          "isContinuation": false
-        }
-    `
+      {
+        "intent": "meta_instruction",
+        "isContinuation": false,
+        "confidence": 0.95
+      }
+    `;
   };
 
   /**
-   * Validador determinista de relación entre dos textos.
-   * @param {string} t1 - Texto base (Anterior)
-   * @param {string} t2 - Texto nuevo (Siguiente)
+   *  Detecta señales explícitas de continuación, como pronombres demostrativos, referencias temporales o conectores lógicos que indican que el usuario está añadiendo información relacionada con el contexto actual.
+   * @param {*} input 
+   * @returns 
+   */
+  #hasExplicitContinuationCue(input) {
+    const lower = input.toLowerCase();
+
+    return [
+      "eso",
+      "esta",
+      "este",
+      "ese",
+      "esa",
+      "lo anterior",
+      "lo de antes",
+      "continua",
+      "contin�a",
+      "sigue",
+      "ahora",
+      "tambien",
+      "tambi�n",
+      "primero",
+      "segundo",
+      "tercero",
+      "ultimo",
+      "�ltimo",
+    ].some((token) => lower.includes(token));
+  };
+
+  /**
+   *  Detecta si la entrada del usuario parece ser una solicitud independiente que no está relacionada con el contexto actual, lo que sugiere que el usuario está iniciando un nuevo tema o tarea en lugar de continuar con el anterior.
+   * @param {*} input 
+   * @returns 
+   */
+  #looksLikeStandaloneRequest(input) {
+    const trimmed = input.trim();
+    const lower = trimmed.toLowerCase();
+
+    if (!trimmed) return false;
+    if (trimmed.includes("?")) return true;
+
+    return [
+      "quiero",
+      "necesito",
+      "busca",
+      "dime",
+      "haz",
+      "crea",
+      "genera",
+      "explica",
+      "resume",
+      "compara",
+      "muestrame",
+      "mu�strame",
+      "dame",
+      "cual",
+      "cu�l",
+      "que ",
+      "qu� ",
+      "como ",
+      "c�mo ",
+    ].some((token) => lower.startsWith(token));
+  };
+
+  /**
+   *  Evalúa la relación entre dos textos para determinar si están relacionados temáticamente o estructuralmente, lo que puede indicar que el segundo texto es una continuación del primero. Utiliza métricas como el índice de Jaccard para medir la superposición de vocabulario y la detección de bigramas compartidos para identificar continuidad estructural.
+   *  Esto ayuda a validar o cuestionar la clasificación inicial del LLM sobre si una entrada es una continuación o no, proporcionando una capa adicional de análisis basada en el contenido textual.
+   * @param {*} t1 
+   * @param {*} t2 
+   * @returns 
    */
   #validarRelacionDeterminista(t1, t2) {
-    const clean = (txt) => txt.toLowerCase().replace(/[^\w\s]/gi, '').split(/\s+/).filter(w => w.length > 2);
-    
+    const clean = (txt) =>
+      txt
+        .toLowerCase()
+        .replace(/[^\w\s]/gi, "")
+        .split(/\s+/)
+        .filter((w) => w.length > 2);
+
     const words1 = clean(t1);
     const words2 = clean(t2);
-    
-    // 1. Intersección de Vocabulario (Índice de Jaccard)
+
     const set1 = new Set(words1);
     const set2 = new Set(words2);
-    const intersection = words1.filter(w => set2.has(w));
-    const jaccardIndex = intersection.length / (set1.size + set2.size - intersection.length || 1);
+    const intersection = words1.filter((w) => set2.has(w));
+    const jaccardIndex =
+      intersection.length / (set1.size + set2.size - intersection.length || 1);
 
-    // 2. Coincidencia de N-Gramas (Secuencias de 2 palabras)
-    const getBigrams = (words) => words.map((w, i) => words[i+1] ? `${w} ${words[i+1]}` : null).filter(Boolean);
+    const getBigrams = (words) =>
+      words
+        .map((w, i) => (words[i + 1] ? `${w} ${words[i + 1]}` : null))
+        .filter(Boolean);
+
     const bigrams1 = new Set(getBigrams(words1));
     const bigrams2 = getBigrams(words2);
-    const sharedBigrams = bigrams2.filter(b => bigrams1.has(b));
+    const sharedBigrams = bigrams2.filter((b) => bigrams1.has(b));
 
-    // 3. Verificación de "Puente" (¿El final de T1 conecta con T2?)
-    const t1End = t1.toLowerCase().trim().slice(-20);
-    const t2Start = t2.toLowerCase().trim().slice(0, 20);
-    
-    // Lógica de decisión
-    const tieneRelacionLexica = jaccardIndex > 0.15; // Comparten al menos un 15% de vocabulario único
-    const tieneContinuidadEstructural = sharedBigrams.length > 0; // Comparten frases de 2 palabras
-    
+    const tieneRelacionLexica = jaccardIndex > 0.15;
+    const tieneContinuidadEstructural = sharedBigrams.length > 0;
+
     return {
-        relacionada: tieneRelacionLexica || tieneContinuidadEstructural,
-        metricas: {
-            vocabularioCompartido: (jaccardIndex * 100).toFixed(2) + "%",
-            frasesComunes: sharedBigrams.length,
-            palabrasClave: [...new Set(intersection)]
-        },
-        decision: (tieneRelacionLexica && tieneContinuidadEstructural) ? "Alta Probabilidad" : 
-                  (tieneRelacionLexica || tieneContinuidadEstructural) ? "Posible" : "Inconexo"
+      relacionada: tieneRelacionLexica || tieneContinuidadEstructural,
+      metricas: {
+        vocabularioCompartido: `${(jaccardIndex * 100).toFixed(2)}%`,
+        frasesComunes: sharedBigrams.length,
+        palabrasClave: [...new Set(intersection)]
+      },
+      decision:
+        tieneRelacionLexica && tieneContinuidadEstructural
+          ? "Alta Probabilidad"
+          : tieneRelacionLexica || tieneContinuidadEstructural
+            ? "Posible"
+            : "Inconexo"
     };
   };
 
-
   /**
- * Unifica el resultado del LLM con la validación técnica determinista.
- * @param {object} llmResult - { intent, isContinuation, confidence }
- * @param {string} textA - Texto anterior
- * @param {string} textB - Texto nuevo
- */
-  #unificarValidacion(llmResult, textA, textB) {
-    // 1. Ejecutamos la validación determinista (la que programamos antes)
-    const det = this.#validarRelacionDeterminista(textA, textB);
-    
-    // Convertimos las métricas en un valor numérico de 0 a 1
-    const detScore = det.relacionada ? (parseFloat(det.metricas.vocabularioCompartido) / 100) : 0;
-    const hasStructure = det.metricas.frasesComunes > 0;
+   *  Integra la clasificación inicial del LLM con análisis deterministas basados en el contenido textual para llegar a una decisión más informada sobre la intención del usuario y si su entrada es una continuación del contexto actual. Ajusta la confianza y la clasificación de continuación según señales explícitas, la relación textual entre la entrada actual y la última interacción, y el estado del sistema, proporcionando una evaluación más robusta y matizada que puede mejorar la precisión de la clasificación de intenciones en escenarios complejos.
+   * @param {*} llmResult 
+   * @param {*} textA 
+   * @param {*} textB 
+   * @param {*} state 
+   * @returns 
+   */
+  #unificarValidacion(llmResult, textA, textB, state = {}) {
+    if (!state.goal) {
+      return {
+        intent: llmResult.intent || "social",
+        isContinuation: false,
+        confidence: llmResult.confidence ?? 1,
+        source: "no_goal_fallback"
+      };
+    }
 
-    // 2. Lógica de unificación (Consenso)
+    const det = this.#validarRelacionDeterminista(textA, textB);
+    const detScore = det.relacionada
+      ? parseFloat(det.metricas.vocabularioCompartido) / 100
+      : 0;
+    const hasStructure = det.metricas.frasesComunes > 0;
+    const explicitContinuationCue = this.#hasExplicitContinuationCue(textB);
+    const standaloneRequest = this.#looksLikeStandaloneRequest(textB);
+
     let finalIsContinuation = llmResult.isContinuation;
     let finalConfidence = llmResult.confidence;
 
-    // CASO A: El código detecta repetición o solapamiento claro (Alta fiabilidad técnica)
     if (hasStructure) {
-        finalIsContinuation = true;
-        finalConfidence = Math.max(finalConfidence, 0.9); // Reforzamos la confianza
-    };
+      finalIsContinuation = true;
+      finalConfidence = Math.max(finalConfidence ?? 0, 0.9);
+    }
 
-    // CASO B: Conflicto - El LLM dice que NO, pero el código detecta mucha relación léxica
     if (!llmResult.isContinuation && detScore > 0.25) {
-        // Si comparten más del 25% de palabras, probablemente el LLM se equivocó
-        finalIsContinuation = true;
-        finalConfidence = 0.7; 
-    };
+      finalIsContinuation = true;
+      finalConfidence = 0.7;
+    }
 
-    // CASO C: Conflicto - El LLM dice que SÍ, pero el código no ve absolutamente nada (0%)
     if (llmResult.isContinuation && detScore === 0 && !hasStructure) {
-      // Aquí manda el LLM por semántica, pero bajamos la confianza por si es alucinación
-      finalConfidence = Math.min(finalConfidence, 0.5);
-    };
+      finalConfidence = Math.min(finalConfidence ?? 0.5, 0.5);
+    }
 
-    // 3. Fallback Seguro: Si el LLM viene vacío o con error
+    if (state.status === "waiting_for_input") {
+      finalIsContinuation =
+        llmResult.intent === "provide_info" || explicitContinuationCue;
+      finalConfidence = finalIsContinuation
+        ? Math.max(finalConfidence ?? 0, 0.8)
+        : Math.min(finalConfidence ?? 0.5, 0.4);
+    }
+
+    if (llmResult.intent === "meta_instruction") {
+      finalIsContinuation = false;
+      finalConfidence = Math.max(finalConfidence ?? 0, 0.9);
+    }
+
+    if (
+      llmResult.intent === "request_action" &&
+      standaloneRequest &&
+      !explicitContinuationCue
+    ) {
+      finalIsContinuation = false;
+      finalConfidence = Math.max(finalConfidence ?? 0, 0.85);
+    }
+
+    if (llmResult.intent === "social") {
+      finalIsContinuation = false;
+      finalConfidence = Math.max(finalConfidence ?? 0, 0.9);
+    }
+
     if (llmResult.confidence === 0) {
-        return {
-          intent: llmResult.intent || "social",
-          isContinuation: det.relacionada, // Mandan las reglas fijas
-          confidence: det.relacionada ? 0.6 : 0.3,
-          source: "deterministic_fallback"
-        };
-    };
+      return {
+        intent: llmResult.intent || "social",
+        isContinuation: det.relacionada,
+        confidence: det.relacionada ? 0.6 : 0.3,
+        source: "deterministic_fallback"
+      };
+    }
 
     return {
       intent: llmResult.intent,
@@ -204,5 +293,4 @@ export class IntentClassifier {
       source: "hybrid_validation"
     };
   };
-
-};
+}
