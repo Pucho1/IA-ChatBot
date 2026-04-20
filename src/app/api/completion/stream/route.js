@@ -88,7 +88,7 @@ export async function POST(req) {
 
   const agentResponse = await runtime.run(state); // manejo la nueva entrada del user teniendo en cuante el estado actual
 
-  sessionStore.set(ip, state); // lo guardo despues porque el runtime lo mnodifica 
+  sessionStore.set(ip, state); // lo guardo despues porque el runtime lo mnodifica  
   // si lo hiciera antes guardaria un estado antiguo de mi agente
 
   console.log("respuest del AgentRuntime ------->", agentResponse);

@@ -19,7 +19,7 @@ export class TransitionResolver {
 
         const isUserContinuingFlow =  hasActiveGoal && intent.isContinuation;
 
-        // El agente detecta que el usuario ha hecho una nueva solicitud o pedido, 
+        // El agente detecta que el usuario ha hecho una nueva solicitud o pedido,
         // indicando claramente que quiere que el agente realice una acción específica.
         const isNewGoal = intent.intent === "request_action" &&  !intent.isContinuation;
 
@@ -31,7 +31,7 @@ export class TransitionResolver {
                 shouldResetGoal: false,
                 shouldReplan: false,
             };
-        }
+        };
 
         // 2️⃣ FILL_MISSING_DATA
         if (hasBlockedSteps && providesData) {
@@ -40,7 +40,7 @@ export class TransitionResolver {
                 shouldResetGoal: false,
                 shouldReplan: false,
             };
-        }
+        };
 
         // 3️⃣ NEW_TASK
         if (isNewGoal) {
@@ -49,7 +49,7 @@ export class TransitionResolver {
                 shouldResetGoal: true,
                 shouldReplan: true,
             };
-        }
+        };
 
         // 4️⃣ IRRELEVANT
         return {

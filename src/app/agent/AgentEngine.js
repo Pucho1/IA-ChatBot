@@ -13,11 +13,11 @@ export class AgentEngine {
      * @param {*} state El estado actual del agente, que incluye el objetivo, el historial de acciones, etc.
      * @returns
      */
-    async generatePlan({ state, registry, requiresTools }) {
+    async generatePlan({ state, history, registry, mode, executionState }) {
 
         const conversationalState = this.memory.getState();
 
-        const prompt = this.buildPlannerPrompt(state, registry, conversationalState);
+        const prompt = this.buildPlannerPrompt(state, registry, conversationalState, mode, executionState);
 
         const tools = registry.getCognitiveManifest();
    
@@ -102,6 +102,17 @@ export class AgentEngine {
         const response = await llmClient().complete({
             messages: prompt,
             temperature: 0.7,
+        });
+
+        return response.choices[0].message.content;
+    };
+
+    async executeVerificationGoal(prompt) {
+
+        const response = await llmClient().complete({
+            messages: prompt,
+            temperature: 0.7,
+            
         });
 
         return response.choices[0].message.content;
@@ -212,8 +223,10 @@ export class AgentEngine {
      * @param {*} conversationalState 
      * @returns 
      */
-    buildPlannerPrompt(state, registry, conversationalState) {
+    buildPlannerPrompt(state, registry, conversationalState, mode, executionState) {
+
         const { messages, facts, summary } = conversationalState;
+
         const tools = registry.getExecutionManifest();
 
         const toolDescriptions = tools
@@ -227,7 +240,27 @@ export class AgentEngine {
                 `;
             });
         
-        
+        const executionInfo = `
+            EXECUTION STATE:
+
+            MODE: ${mode}
+
+            COMPLETED STEPS:
+            ${executionState?.completedSteps?.map(s => `- ${s.tool}`).join("\n") || "None"}
+
+            FAILED STEPS:
+            ${executionState?.failedSteps?.map(s => `- ${s.tool}`).join("\n") || "None"}
+
+            CONTEXT:
+            - Has selection: ${!!executionState?.availableData?.selected}
+            - Available options: ${executionState?.availableData?.options?.length || 0}
+
+            RULES:
+            - Continue from current progress
+            - Do NOT restart the plan from scratch
+            - Do NOT repeat completed steps unless required
+            - If selection exists → move to next action
+        `;
 
         return [
             {
@@ -235,7 +268,7 @@ export class AgentEngine {
                 content: `
                     You are an AI planning system.
 
-                    Your task is to generate a structured execution plan.
+                    Your task is to generate a structured execution plan instead of mood.
 
                     IMPORTANT:
                     - You MUST use the generatePlan tool
@@ -257,9 +290,14 @@ export class AgentEngine {
 
                     PLANNING RULES:
                     - If context.selected exists:
-                    → DO NOT call searchFlights again
-                    → Continue with booking step
-                    - NEVER call a tool that already appears in "Executed tools"
+                    - Do NOT repeat steps that are already completed
+                    - You MAY reuse a tool if needed for a different step
+
+                    If MODE is "replan":
+                    - Assume previous steps were partially executed
+                    - Continue the plan from current state
+                    - Focus on completing the goal, not restarting
+                    - If one of the new steps depends on a step that was completed, do not include in the dependencies of the current step.
 
                     this is the avaible tools:
                     ${toolDescriptions}
@@ -272,21 +310,22 @@ export class AgentEngine {
                 role: "system",
                 content: `
                    CURRENT STATE:
-
                     - Goal: ${state.goal}
                     - Status: ${state.status}
-
-                    ${this.#buildOperationalContext(state)}
 
                     - Last tool result:
                     ${this.extractLastToolResult(state.history)}
                 `
             },
 
+            {
+                role: "system",
+                content: executionInfo
+            },
+
             ...messages,
             ...facts,
             ...summary,
-            // ...this.#buildToolHistory(history)
         ];
     };
 
@@ -422,58 +461,4 @@ export class AgentEngine {
             .filter(h => h.decision?.tool)
             .map(h => h.decision.tool);
     };
-
-    #buildOperationalContext(state) {
-        if (state.context?.selected) {
-            return `
-                SELECTED RESULT:
-
-                A previous step already produced results and the user selected one option.
-
-                Selected item:
-                - flightId: ${state.context.selected.flightId}
-
-                IMPORTANT:
-                - This means searchFlights has already been executed
-                - DO NOT call searchFlights again
-                - Continue the flow using this selection
-                `;
-        };
-
-        return `No selected result.`;
-    };
-
-    // #buildToolHistory(history) {
-
-    //     return history.flatMap(h => {
-
-    //         if (h.decision.type !== "tool") {
-    //             return [];
-    //         }
-
-    //         const assistantMessage = {
-    //             role: "assistant",
-    //             tool_calls: h.decision.toolCalls.map(call => ({
-    //                 id: call.id,
-    //                 type: "function",
-    //                 function: {
-    //                     name: call.name,
-    //                     arguments: JSON.stringify(call.args)
-    //                 }
-    //             }))
-    //         };
-
-    //         const toolMessages = h.observation.toolResults.map(result => ({
-    //             role: "tool",
-    //             tool_call_id: result.id,
-    //             content: JSON.stringify({
-    //                 success: result.success,
-    //                 result: result.result ?? null,
-    //                 error: result.error ?? null
-    //             })
-    //         }));
-
-    //         return [assistantMessage, ...toolMessages];
-    //     });
-    // };
 };

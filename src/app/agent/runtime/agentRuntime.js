@@ -1,8 +1,9 @@
-import { BehaviorManager } from "../behavior/BehaviorManager";
-import { ReferenceResolver } from "../cognition/reference/ReferenceResolver";
-import { TransitionResolver } from "../cognition/transition/TransitionResolver";
-import { PlanGraph } from "../execution/PlanGraph";
-import { MissingInfoGuard } from "../execution/misinInformationHandler/detectMissingFields";
+import { BehaviorManager }      from "../behavior/BehaviorManager";
+import { GoalVerifier }         from "../cognition/goal/GoalVerifier";
+import { ReferenceResolver }    from "../cognition/reference/ReferenceResolver";
+import { TransitionResolver }   from "../cognition/transition/TransitionResolver";
+import { PlanGraph }            from "../execution/PlanGraph";
+import { MissingInfoGuard }     from "../execution/misinInformationHandler/detectMissingFields";
 
 /**
  * Inicializa estado
@@ -41,6 +42,7 @@ export class AgentRuntime {
         this.behaviorManager    = new BehaviorManager();
         this.referenceResolver  = new ReferenceResolver();
         this.transitionResolver = new TransitionResolver();
+        this.goalVerifier       = new GoalVerifier({ engine });
     };
 
     /**
@@ -82,12 +84,13 @@ export class AgentRuntime {
             state,
         });
 
-        console.log("Resultado del TransitionResolver =======>", transition );
-        console.log("interpretacion de ResolverReference =======>", reference );
+        console.log("interpretacion de ResolverReference =======>", reference );  
+        console.log("Resultado del TransitionResolver =======>", transition ); //------ esto no vaaaaaaaa
 
         if (transition.type === "SELECT_OPTION") {
             state.context.selected = reference.value;
             state.context.skipSearch = true;
+            state.context.awaitingSelection = false;
         };
 
         const isContinuationResetet = {
@@ -178,6 +181,8 @@ export class AgentRuntime {
                     state,
                     history: state.history,
                     registry: this.registry,
+                    mode: state.isReplanning ? "replan" : "initial",
+                    executionState: this.buildExecutionState(state),
                 });
 
                 console.log("Plan generado:", plan);
@@ -187,7 +192,7 @@ export class AgentRuntime {
 
                     console.log("Plan inválido: se requieren tools");
 
-                    state.status = "replanning";
+                    state.isReplanning = true;
 
                     // OPCIÓN 1 (simple)
                     // forzar reintento con contexto extra
@@ -204,6 +209,8 @@ export class AgentRuntime {
                 };
 
                 state.planGraph = new PlanGraph(plan.steps);
+
+                state.isReplanning = false;
 
                 continue;
             };
@@ -225,22 +232,25 @@ export class AgentRuntime {
                 */
                 if (state.planGraph.isComplete()) {
 
-                    // Como no tengo mas pasos y el el plan esta completado genero respuesta final.
-                    const output = await this.engine.generateFinalAnswer({
-                        goal: state.goal,
-                        history: state.history,
-                        state,
-                    });
+                    const verification  = await this.goalVerifier.verify({ state });
 
+                    console.log("----Goal verification -----", {verification});
+                    
 
-                    console.log("esta es la rtespuesta final del agente------>", output)
+                    if (verification.success ) {
 
-                    const goalSatisfied = await this.verifyGoal(state, { output });
-
-                    if (goalSatisfied) {
-
-                        console.log("!!!----Goal verificado como cumplido. Finalizando agente...-----!!!");
+                        console.log("!!!----Goal verificado como cumplido. Finalizando agente...-----!!!", {verification});
                         state.status = "completed";
+
+                        // Como no tengo mas pasos y el el plan esta completado genero respuesta final.
+                        const output = await this.engine.generateFinalAnswer({
+                            goal: state.goal,
+                            history: state.history,
+                            state,
+                        });
+
+                        console.log("esta es la rtespuesta final del agente------>", output);
+
 
                         const record = this.#createStepRecord(
                             state,
@@ -256,8 +266,8 @@ export class AgentRuntime {
                     /**
                      * Goal no cumplido → replanning
                      */
-                    // state.planGraph = null;
-                    state.status = "replanning";
+                    state.planGraph = null;
+                    state.isReplanning = true;
                     console.log(" ⚠️⚠️⚠️ Plan completo pero goal NO cumplido → REPLAN ⚠️⚠️⚠️");
                     continue;
                 };
@@ -401,7 +411,7 @@ export class AgentRuntime {
 
                 if (observation.type === "error") {
                     state.planGraph.markFailed(step.id, observation.error);
-                    state.status = "replanning";
+                    state.isReplanning = true;
                     state.metrics.totalErrors++;
                     state.planGraph = null;
                     shouldStopExecution = true;
@@ -514,56 +524,6 @@ export class AgentRuntime {
     };
 
     /**
-     * Verifica si el goal se cumplió satisfactoriamente. 
-     * Esto es especialmente importante para tareas complejas donde el agente necesita usar herramientas
-     * para obtener información o realizar acciones, y no es suficiente con simplemente devolver una respuesta final.
-     * @param {*} state 
-     * @param {*} decision 
-     * @returns boolean
-     */
-    async verifyGoal(state, decision) {
-
-        // Si el agente ha hecho llamadas a herramientas y no hay output en la decisión final,
-        // entonces consideramos que el goal no se cumplió.
-        // if (!decision.output) {
-        //     return false;
-        // };
-
-        // const prompt = [
-        //     {
-        //         role: "system",
-        //         content: "You are evaluating whether an AI agent successfully completed a goal."
-        //     },
-        //     {
-        //         role: "user",
-        //         content: `
-        //         Goal:
-        //         ${state.goal}
-
-        //         Agent Output:
-        //         ${decision.output}
-
-        //         Did the agent accomplish the goal?
-
-        //         Answer ONLY with YES or NO.
-        //         `
-        //     },
-        // ];
-
-        // const response = await llmClient().complete({
-        //     messages: prompt,
-        //     temperature: 0,
-        // });
-
-        // console.log("Respuesta del LLM para verificación de gooooooooooooooal: ", response.choices[0].message.content); // Esto es oro puro para debugging. Te muestra exactamente qué respuesta dio el modelo al evaluar si el objetivo se cumplió o no, lo cual es crucial para entender cómo el modelo está interpretando el éxito del agente y por qué podría estar dando ciertas respuestas en pasos posteriores.
-
-        // const answer = response.choices[0].message.content.trim().toUpperCase();
-
-        // return answer.includes("YES");
-        return !!decision.output;
-    };
-
-    /**
      *  Construye la respuesta final que se le va a devolver al usuario.
      * @param {*} state
      * @returns
@@ -586,6 +546,18 @@ export class AgentRuntime {
             timestamp: Date.now()
         };
 
+        // if (state.status === "completed") {
+        //     state.goal = null;
+        //     state.planGraph = null;
+        //     state.context = {
+        //         ...state.context,
+        //         awaitingSelection: false,
+        //         selected: null,
+        //         options: null,
+        //         skipSearch: false,
+        //     };
+        // }
+
         return{
             // El agente se considera exitoso si llega a una decisión final antes de alcanzar el límite de pasos.
             //  Si alcanza el límite de pasos sin llegar a una decisión final, se considera que no tuvo éxito.
@@ -601,4 +573,33 @@ export class AgentRuntime {
         };
     };
 
+    /**
+     * Construye el estado de ejecución que se le va a pasar al motor de planificación y ejecución del agente.
+     *  Este estado incluye información sobre los pasos completados, los pasos fallidos, 
+     * si hay una selección pendiente por parte del usuario, y los datos disponibles en el contexto.
+     *  Es crucial para que el motor pueda tomar decisiones informadas sobre qué hacer a continuación.
+     * @param {*} state 
+     * @returns 
+     */
+    buildExecutionState(state) {
+        return {
+            completedSteps: state.history
+            .filter(h => h.observation.success)
+            .map(h => ({
+                tool: h.decision.tool,
+                args: h.decision.args,
+                result: h.observation.toolResults,
+            })),
+
+            failedSteps: state.history
+            .filter(h => !h.observation.success),
+
+            hasSelection: !!state.context.selected,
+
+            availableData: {
+                selected: state.context.selected,
+                options: state.context.options,
+            }
+        };
+    };
 };

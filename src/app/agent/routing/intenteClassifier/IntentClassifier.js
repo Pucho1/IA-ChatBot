@@ -2,6 +2,7 @@ import { llmClient } from "@/app/llm/llmClinet";
 import { extractJSON } from "@/app/sanyty/verifyJsonResponse";
 
 export class IntentClassifier {
+
   async getIntent(input, state) {
     const prompt = this.#buildPrompt(input, state);
 
@@ -55,6 +56,8 @@ export class IntentClassifier {
       2. CONTINUATION:
       - true si continua el contexto actual
       - false si inicia algo nuevo
+      - SOLO marca true si el sistema estaba esperando esa informacion, si hay referencias explicitas al contexto previo o si existe una relacion clara con el ultimo intercambio
+      - Un dato corto o fragmento suelto como "10 de abril", "Madrid" o "2" no es continuacion por si solo; solo lo es si responde a una pregunta pendiente del sistema
 
       Devuelve JSON:
       {
@@ -155,6 +158,57 @@ export class IntentClassifier {
     ].some((token) => lower.startsWith(token));
   };
 
+  #hasPendingUserInputRequest(state = {}) {
+    const hasBlockedSteps = state.planGraph?.steps?.some(
+      (step) => step.status === "blocked"
+    );
+    const awaitingSelection = Boolean(state.context?.awaitingSelection);
+    const lastMessage = (state.lastInteraction?.text || "").trim().toLowerCase();
+    const systemAskedQuestion =
+      lastMessage.endsWith("?") ||
+      ["elige", "selecciona", "indica", "necesito", "faltan", "confirma"].some(
+        (token) => lastMessage.includes(token)
+      );
+
+    return Boolean(
+      state.goal && (hasBlockedSteps || awaitingSelection || systemAskedQuestion)
+    );
+  };
+
+  #looksLikeBareDataPoint(input) {
+    const trimmed = input.trim();
+
+    if (!trimmed) return false;
+    if (trimmed.includes("?")) return false;
+    if (this.#looksLikeStandaloneRequest(trimmed)) return false;
+
+    const lower = trimmed.toLowerCase();
+    const words = lower.split(/\s+/).filter(Boolean);
+    const hasVerbLikeRequest = [
+      "quiero",
+      "necesito",
+      "busca",
+      "dime",
+      "haz",
+      "crea",
+      "genera",
+      "explica",
+      "resume",
+      "compara",
+      "dame",
+    ].some((token) => lower.startsWith(token));
+
+    if (hasVerbLikeRequest) return false;
+
+    const looksLikeDate =
+      /^\d{1,2}\s+de\s+[a-záéíóúüñ]+$/i.test(trimmed) ||
+      /^\d{1,2}[/-]\d{1,2}([/-]\d{2,4})?$/.test(trimmed);
+    const looksLikeScalar = /^\d+([.,]\d+)?$/.test(trimmed);
+    const looksLikeShortFragment = words.length <= 4;
+
+    return looksLikeDate || looksLikeScalar || looksLikeShortFragment;
+  };
+
   /**
    *  Evalúa la relación entre dos textos para determinar si están relacionados temáticamente o estructuralmente, lo que puede indicar que el segundo texto es una continuación del primero. Utiliza métricas como el índice de Jaccard para medir la superposición de vocabulario y la detección de bigramas compartidos para identificar continuidad estructural.
    *  Esto ayuda a validar o cuestionar la clasificación inicial del LLM sobre si una entrada es una continuación o no, proporcionando una capa adicional de análisis basada en el contenido textual.
@@ -232,6 +286,8 @@ export class IntentClassifier {
     const hasStructure = det.metricas.frasesComunes > 0;
     const explicitContinuationCue = this.#hasExplicitContinuationCue(textB);
     const standaloneRequest = this.#looksLikeStandaloneRequest(textB);
+    const pendingUserInputRequest = this.#hasPendingUserInputRequest(state);
+    const bareDataPoint = this.#looksLikeBareDataPoint(textB);
 
     let finalIsContinuation = llmResult.isContinuation;
     let finalConfidence = llmResult.confidence;
@@ -250,12 +306,26 @@ export class IntentClassifier {
       finalConfidence = Math.min(finalConfidence ?? 0.5, 0.5);
     }
 
-    if (state.status === "waiting_for_input") {
+    if (pendingUserInputRequest) {
       finalIsContinuation =
-        llmResult.intent === "provide_info" || explicitContinuationCue;
+        explicitContinuationCue ||
+        hasStructure ||
+        detScore > 0.18 ||
+        (llmResult.intent === "provide_info" && !standaloneRequest);
       finalConfidence = finalIsContinuation
         ? Math.max(finalConfidence ?? 0, 0.8)
         : Math.min(finalConfidence ?? 0.5, 0.4);
+    }
+
+    if (
+      !pendingUserInputRequest &&
+      llmResult.intent === "provide_info" &&
+      bareDataPoint &&
+      !explicitContinuationCue &&
+      !det.relacionada
+    ) {
+      finalIsContinuation = false;
+      finalConfidence = Math.max(finalConfidence ?? 0, 0.8);
     }
 
     if (llmResult.intent === "meta_instruction") {
