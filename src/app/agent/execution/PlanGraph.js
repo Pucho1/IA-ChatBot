@@ -41,18 +41,6 @@ export class PlanGraph {
       };
     };
 
-    // comprobar dependencias válidas
-    for (const step of this.steps) {
-      for (const dep of step.depends_on) {
-
-        // verifico que los id dentro del arry de dependencias de cada paso exista o sea sea un id de algun otro paso.
-        const exists = this.steps.find(s => s.id === dep);
-
-        if (!exists) {
-          throw new Error(`Step ${step.id} depends on missing step ${dep}`);
-        };
-      };
-    };
   };
 
   /**
@@ -73,15 +61,16 @@ export class PlanGraph {
 
       // Verifica que todas las dependencias de este paso se hayan completado exitosamente
       //  antes de considerar este paso como ejecutable.
-      const depsCompleted = step.depends_on.every(depId => {
-        const dep = this.steps.find(s => s.id === depId);
-        return dep && dep.status === "completed";
-      });
+      // const depsCompleted = step.depends_on.every(depId => {
+      //   const dep = this.steps.find(s => s.id === depId);
+      //   return dep && dep.status === "completed";
+      // });
 
       // Si el paso está pendiente y todas sus dependencias están completadas,
       //  el filtro devuelve true.
-      return depsCompleted;
-    });
+      return true;
+       
+  });
 
   };
 

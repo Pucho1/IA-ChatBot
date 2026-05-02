@@ -13,11 +13,11 @@ export class AgentEngine {
      * @param {*} state El estado actual del agente, que incluye el objetivo, el historial de acciones, etc.
      * @returns
      */
-    async generatePlan({ state, history, registry, mode, executionState }) {
+    async generatePlan({ state, history, registry, mode, executionState, capabilities }) {
 
         const conversationalState = this.memory.getState();
 
-        const prompt = this.buildPlannerPrompt(state, registry, conversationalState, mode, executionState);
+        const prompt = this.buildPlannerPrompt(state, registry, conversationalState, mode, executionState, capabilities);
 
         const tools = registry.getCognitiveManifest();
    
@@ -223,7 +223,7 @@ export class AgentEngine {
      * @param {*} conversationalState 
      * @returns 
      */
-    buildPlannerPrompt(state, registry, conversationalState, mode, executionState) {
+    buildPlannerPrompt(state, registry, conversationalState, mode, executionState, capabilities) {
 
         const { messages, facts, summary } = conversationalState;
 
@@ -238,10 +238,12 @@ export class AgentEngine {
                     Parameters:
                     ${JSON.stringify(t.function.parameters, null, 2)}
                 `;
-            });
+            }).join("\n\n");
         
         const executionInfo = `
-            EXECUTION STATE:
+            =====================
+            EXECUTION STATE
+            =====================
 
             MODE: ${mode}
 
@@ -255,11 +257,10 @@ export class AgentEngine {
             - Has selection: ${!!executionState?.availableData?.selected}
             - Available options: ${executionState?.availableData?.options?.length || 0}
 
-            RULES:
+           CONSTRAINTS:
+            - Do NOT repeat completed steps
             - Continue from current progress
-            - Do NOT restart the plan from scratch
-            - Do NOT repeat completed steps unless required
-            - If selection exists → move to next action
+            - Do NOT restart the plan
         `;
 
         return [
@@ -268,30 +269,26 @@ export class AgentEngine {
                 content: `
                     You are an AI planning system.
 
-                    Your task is to generate a structured execution plan instead of mood.
-
                     IMPORTANT:
                     - You MUST use the generatePlan tool
                     - Do NOT return plain text
                     - Do NOT explain anything
 
-                    Rules:
+                    =====================
+                    GOAL
+                    =====================
+
+                    ${state.goal}
+
+                    CRITICAL RULES:
+
                     - Use ONLY available tools.
-                    - Each step must include: id, description, tool, args, depends_on.
-                    - Use correct argument names based on tool definitions.
-                    - Do NOT invent parameters.
-                    - DO NOT invent values.
-                    - If a required parameter is missing → leave it out.
-
-                    CRITICAL RULES FOR TOOLS PARAMS:
-                    - If you do NOT have a value for a required parameter, DO NOT include it
-                    - NEVER invent placeholder values like "unknown", "Origen", "Destino"
-                    - It is better to leave arguments empty than to guess
-
-                    PLANNING RULES:
-                    - If context.selected exists:
-                    - Do NOT repeat steps that are already completed
-                    - You MAY reuse a tool if needed for a different step
+                    - The goal is complete ONLY when all required capabilities are satisfied
+                    - You MUST generate steps to satisfy ALL missing capabilities
+                    - Do NOT generate steps for capabilities already satisfied
+                    - Capabilities are NOT tools
+                    - Capabilities represent system states, NOT executable actions
+                    - You MUST ONLY use tools listed in the TOOLS section
 
                     If MODE is "replan":
                     - Assume previous steps were partially executed
@@ -299,28 +296,52 @@ export class AgentEngine {
                     - Focus on completing the goal, not restarting
                     - If one of the new steps depends on a step that was completed, do not include in the dependencies of the current step.
 
+                    ${executionInfo}
+
+                    =====================
+                    TOOLS
+                    =====================
+
                     this is the avaible tools:
                     ${toolDescriptions}
 
-                    Generate the plan now.
-                `        
-            },
-
-            {
-                role: "system",
-                content: `
-                   CURRENT STATE:
-                    - Goal: ${state.goal}
-                    - Status: ${state.status}
+                     CRITICAL RULES FOR TOOLS PARAMS:
+                    - If you do NOT have a value for a required parameter, DO NOT include it
+                    - NEVER invent placeholder values like "unknown", "Origen", "Destino"
+                    - It is better to leave arguments empty than to guess
 
                     - Last tool result:
                     ${this.extractLastToolResult(state.history)}
-                `
-            },
+                    
+                    RULE:
+                    - Use tools ONLY to achieve the missing capabilities
 
-            {
-                role: "system",
-                content: executionInfo
+                    =====================
+                    OUTPUT FORMAT
+                    =====================
+
+                    You MUST return a valid generatePlan tool call.
+
+                    Plan format:
+
+                    {
+                    "steps": [
+                        {
+                        "id": number,
+                        "description": string,
+                        "tool": string,
+                        "args": object,
+                        "depends_on": []
+                        }
+                    ]
+                    }
+
+                    REQUIREMENTS:
+
+                    - The plan MUST be complete (cover all missing capabilities)
+                    - The plan MUST be minimal (no unnecessary steps)
+                    - Do NOT include explanations
+                `        
             },
 
             ...messages,

@@ -34,6 +34,15 @@ export class IntentClassifier {
     }
   };
 
+  /**
+   * Construye un prompt detallado para el LLM que incluye el contexto relevante del sistema, 
+   * la entrada del usuario, el último mensaje del sistema y el historial de interacciones. 
+   * El prompt guía al LLM para clasificar la intención del usuario en categorías específicas y determinar si la entrada es una continuación del contexto actual, 
+   * proporcionando ejemplos claros para mejorar la precisión de la clasificación.
+   * @param {*} input 
+   * @param {*} state 
+   * @returns 
+   */
   #buildPrompt(input, state) {
     const lastMessage = state.lastInteraction?.text || "Ninguno";
 
@@ -158,6 +167,14 @@ export class IntentClassifier {
     ].some((token) => lower.startsWith(token));
   };
 
+  /**
+   * Evalúa el estado del sistema para identificar si hay pasos bloqueados, 
+   * selecciones pendientes o preguntas abiertas que sugieran que el usuario debería estar proporcionando información 
+   * relacionada con el contexto actual, lo que puede indicar que su entrada es una continuación de lo que el sistema está 
+   * esperando para avanzar en la tarea.
+   * @param {*} state 
+   * @returns 
+   */
   #hasPendingUserInputRequest(state = {}) {
     const hasBlockedSteps = state.planGraph?.steps?.some(
       (step) => step.status === "blocked"
@@ -171,10 +188,20 @@ export class IntentClassifier {
       );
 
     return Boolean(
-      state.goal && (hasBlockedSteps || awaitingSelection || systemAskedQuestion)
+      state.goal &&
+      (hasBlockedSteps || awaitingSelection || systemAskedQuestion)
     );
   };
 
+  /**
+   *  Evalúa si la entrada del usuario parece ser un dato suelto, una fecha,
+   *  un número o un fragmento corto que no contiene señales explícitas de continuación ni una relación clara con el contexto actual,
+   *  lo que sugiere que el usuario podría estar proporcionando información puntual o iniciando un nuevo tema en lugar
+   *  de continuar con el anterior. Esto ayuda a evitar clasificar erróneamente como continuación entradas que son independientes
+   *  o que responden a preguntas específicas sin necesidad de mantener continuidad con el contexto previo.
+   * @param {*} input 
+   * @returns 
+   */
   #looksLikeBareDataPoint(input) {
     const trimmed = input.trim();
 

@@ -1,152 +1,201 @@
+// ===============================
+// DEFAULT RULES (GOAL → CAPABILITIES)
+// ===============================
+const DEFAULT_GOAL_CAPABILITY_RULES = [
+    {
+        name: "booking",
+        matches: [/reserv/i],
+        capabilities: ["selection_done", "booking_done"],
+    },
+    {
+        name: "flight_search",
+        matches: [/vuelo/i],
+        capabilities: ["options_presented"],
+    },
+    {
+        name: "date_lookup",
+        matches: [/dia/i, /fecha/i],
+        capabilities: ["date_obtained"],
+    },
+    {
+        name: "time_lookup",
+        matches: [/hora/i],
+        capabilities: ["time_obtained"],
+    },
+    {
+        name: "weather_lookup",
+        matches: [/clima/i, /tiempo\s+meteorologico/i],
+        capabilities: ["weather_obtained"],
+    },
+];
+
+
+// ===============================
+// DEFAULT CAPABILITY CHECKS
+// ===============================
+const DEFAULT_CAPABILITY_CHECKS = {
+
+    // Usuario ha seleccionado una opción
+    selection_done: (state) =>
+        Boolean(state.context?.selected),
+
+    // Se han mostrado opciones al usuario
+    options_presented: (state) =>
+        Array.isArray(state.context?.options) &&
+        state.context.options.length > 0,
+
+    // Reserva completada
+    booking_done: (state) =>
+        state.history?.some(entry =>
+            entry.decision?.tool === "bookFlight" &&
+            entry.observation?.success === true
+        ) ?? false,
+
+    // Fecha obtenida
+    date_obtained: (state) =>
+        state.history?.some(entry =>
+            entry.decision?.tool === "getCurrentDate" &&
+            entry.observation?.success === true
+        ) ?? false,
+
+    // Hora obtenida
+    time_obtained: (state) =>
+        state.history?.some(entry =>
+            entry.decision?.tool === "getCurrentTime" &&
+            entry.observation?.success === true
+        ) ?? false,
+
+    // Clima obtenido
+    weather_obtained: (state) =>
+        state.history?.some(entry =>
+            entry.decision?.tool === "getWeather" &&
+            entry.observation?.success === true
+        ) ?? false,
+};
+
+
+// ===============================
+// GOAL VERIFIER
+// ===============================
 export class GoalVerifier {
-    constructor({ engine }) {
-        this.engine = engine;
-    };
+    constructor({
+        capabilityChecks = {},
+        goalCapabilityRules = DEFAULT_GOAL_CAPABILITY_RULES,
+    } = {}) {
+        this.capabilityChecks = {
+            ...DEFAULT_CAPABILITY_CHECKS,
+            ...capabilityChecks,
+        };
+
+        this.goalCapabilityRules = goalCapabilityRules;
+    }
+
     /**
-     * Verifica si el goal se ha cumplido basado en el estado actual del agente, esto es solo un ejemplo y deberías adaptarlo a tus necesidades reales.
-     * @param {*} state 
-     * @returns 
+     * Verifica si el goal se ha cumplido
      */
     async verify({ state }) {
+        const capabilities = this.#getRequiredCapabilities(state);
 
-        const goalType = this.#detectGoalType(state.goal);
-        const capabilities = this.#getRequiredCapabilities(goalType);
+        // ⚠️ NO fallback mágico
+        if (capabilities.length === 0) {
+            return {
+                success: false,
+                missing: ["no_capabilities_defined"],
+            };
+        }
+
         return this.#checkCapabilities(capabilities, state);
-
-        // const prompt = [
-        //     {
-        //         role: "system",
-        //         content: `
-        //             You are evaluating whether an AI agent has successfully completed a goal.
-
-        //             You must be STRICT.
-
-        //             Rules:
-        //             - Only say success = true if the goal is fully achieved
-        //             - If something is missing → false
-        //             - Do NOT assume
-        //             - Do NOT hallucinate
-        //             - Base your answer ONLY on execution evidence
-        //         `
-        //     },
-        //     {
-        //         role: "user",
-        //         content: `
-        //             GOAL:
-        //             ${goal}
-
-        //             EXECUTION HISTORY:
-        //             ${JSON.stringify(history, null, 2)}
-
-        //             CONTEXT:
-        //             ${JSON.stringify(context, null, 2)}
-
-        //             Did the agent successfully complete the goal?
-
-        //             Return JSON:
-        //             {
-        //             "success": true/false,
-        //             "confidence": 0.0-1.0,
-        //             "reason": "short explanation"
-        //             }
-        //         `
-        //     }
-        // ];
-
-        // const result = await this.engine.executeVerificationGoal(prompt);
-
-        // return result;
-    };
-
+    }
 
     /**
-     * Detecta el tipo de objetivo basado en su contenido, esto es solo un ejemplo y deberías adaptarlo a tus necesidades reales.
-     * @param {*} goal 
-     * @returns 
+     * Devuelve capacidades requeridas para el goal
      */
-    #detectGoalType(goal) {
-        // Aquí podrías implementar lógica para detectar el tipo de objetivo basado en su contenido
-        // Por ejemplo, podrías buscar palabras clave o patrones específicos
-       const g = goal.toLowerCase();
+    #getRequiredCapabilities(state) {
+        if (Array.isArray(state.requiredCapabilities)) {
+            return this.#unique(state.requiredCapabilities);
+        }
 
-        if (g.includes("reserva")) return "booking";
-        if (g.includes("vuelo")) return "search";
-        if (g.includes("día") || g.includes("fecha")) return "date";
+        const goal = this.#normalizeText(state.goal);
 
-        return "unknown";
-    };
+        const matchedRules = this.goalCapabilityRules.filter(rule =>
+            rule.matches.some(pattern => pattern.test(goal))
+        );
 
-    /**
-     * Mapea cada tipo de objetivo a las capacidades requeridas para considerarlo cumplido, esto es solo un ejemplo y deberías adaptarlo a tus necesidades reales.
-     * @param {*} goalType 
-     * @returns 
-     */
-    #getRequiredCapabilities(goalType) {
-        const map = {
-            booking: ["selection_done", "booking_done"],
-            search: ["options_presented"],
-            date: ["information_delivered"],
-        };
+        const capabilities = matchedRules.flatMap(rule => rule.capabilities);
 
-        return map[goalType] || [];
-    };
+        return this.#unique(capabilities);
+    }
 
     /**
-     *  chequea si se cumplen las capacidades requeridas para el tipo de objetivo, basado en el estado actual del agente (historial, contexto, etc)
-     * @param {*} capabilities 
-     * @param {*} state 
-     * @returns 
+     * Evalúa todas las capacidades
      */
     #checkCapabilities(capabilities, state) {
-        const results = capabilities.map(cap => {
-            return this.#checkSingle(cap, state);  // chequeo cada capacidad individualmente y guardo el resultado (true/false) en un array, 
-            // luego verifico que todas sean true para considerar el goal como cumplido.
+        const results = capabilities.map(capability => ({
+            capability,
+            success: this.#checkSingle(capability, state),
+        }));
+
+        console.log("----Capability check results -----", {
+            capabilities,
+            results,
         });
 
-        console.log("----Capability check results -----", {capabilities, results});
-
-        const success = results.every(r => r === true);
+        const missing = results
+            .filter(r => !r.success)
+            .map(r => r.capability);
 
         return {
-            success,
-            missing: capabilities.filter((_, index) => !results[index]) // Devuelvo también qué capacidades faltan para cumplir el objetivo, si alguna false al ponerla true sale devulta.
-            // esto puede ser útil para debugging o para que el agente se replantee su estrategia.
+            success: missing.length === 0,
+            missing,
         };
-    };
+    }
 
     /**
-     * chequea individualmente cada capacidad requerida para el goal, basado en el estado actual del agente (historial, contexto, etc)
-     * @param {*} cap 
-     * @param {*} state 
-     * @returns 
+     * Evalúa una sola capability
      */
-    #checkSingle(cap, state) {
-        switch (cap) {
+    #checkSingle(capability, state) {
+        const check = this.capabilityChecks[capability];
 
-            case "selection_done":
-                return !!state.context.selected;
-
-            case "options_presented":
-                return Array.isArray(state.context.options) && state.context.options.length > 0;
-
-            case "booking_done":
-                return state.history.some(h =>
-                    h.decision.tool === "bookFlight" &&
-                    h.observation.success
-                );
-
-            case "information_delivered":
-                const hasTool = state.history.some(h =>
-                    h.decision.tool === "getCurrentDate" &&
-                    h.observation.success
-                );
-
-                const hasOutput = state.history.length > 0;
-
-                return hasTool && hasOutput;
-
-                default:
-                return false;
+        if (!check) {
+            console.warn(`⚠️ Unknown capability: ${capability}`);
+            return false;
         }
-    };
+
+        return Boolean(check(state));
+    }
+
+    /**
+     * API pública para planner/runtime
+     */
+    capabilitiesStatus(state) {
+        const required = this.#getRequiredCapabilities(state);
+
+        if (required.length === 0) {
+            return {
+                required: [],
+                missing: ["no_capabilities_defined"],
+            };
+        }
+
+        const { missing } = this.#checkCapabilities(required, state);
+
+        return {
+            required,
+            missing,
+        };
+    }
+
+    /**
+     * Utils
+     */
+    #unique(items) {
+        return [...new Set(items.filter(Boolean))];
+    }
+
+    #normalizeText(text) {
+        return String(text || "")
+            .toLowerCase()
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "");
+    }
 };

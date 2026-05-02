@@ -16,6 +16,7 @@ export class ArgumentResolver {
 
     const context = {
       args,
+      state,
       currentInput: state.currentInput,
       schema,
       history: state.history,

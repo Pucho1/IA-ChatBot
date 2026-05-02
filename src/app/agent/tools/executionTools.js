@@ -10,6 +10,13 @@ export const executionTools = [
   },
 
   {
+    name : "getCurrentTime",
+    description: "Returns the current system time",
+    schema: z.object({}),
+    handler: async () => new Date().toISOString(),
+  },
+
+  {
     name: "searchFlights",
     description: "Search available flights",
     schema: z.object({

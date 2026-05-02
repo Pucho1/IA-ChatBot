@@ -177,12 +177,46 @@ export class AgentRuntime {
              */
             if (!state.planGraph) {
 
+                const capabilities = this.goalVerifier.capabilitiesStatus(state);
+
+                // → GoalVerifier no entiende el goal
+                // → NO saltar planner
+                // → 🔥 Interpreto el goal para capabilities y poder generar el plan en funcion de eso, si no se puede p[ues no se genera plan
+                const hasRequirements = capabilities.required && capabilities.required.length > 0;
+                const nothingMissing = !capabilities.missing || capabilities.missing.length === 0;
+
+                console.log("----Verificación de capacidades para el goal actual -----", capabilities);
+
+                if (hasRequirements && nothingMissing) {
+
+                    console.log("No missing capabilities → skipping planning");
+
+                    state.status = "completed";
+
+                    const output = await this.engine.generateFinalAnswer({
+                        goal: state.goal,
+                        history: state.history,
+                        state,
+                    });
+
+                    const record = this.#createStepRecord(
+                        state,
+                        { type: "final", output },
+                        { success: true, done: true }
+                    );
+
+                    state.history.push(record);
+
+                    break; // 🔥 salir del loop
+                };
+
                 const plan = await this.engine.generatePlan({
                     state,
                     history: state.history,
                     registry: this.registry,
                     mode: state.isReplanning ? "replan" : "initial",
                     executionState: this.buildExecutionState(state),
+                    capabilities,
                 });
 
                 console.log("Plan generado:", plan);
@@ -337,7 +371,7 @@ export class AgentRuntime {
 
                     observation = {
                         type: "blocked",
-                        success: true,
+                        success: false,
                         result: question,
                         error: null,
                         missingFields,
@@ -400,7 +434,6 @@ export class AgentRuntime {
 
                     state.context.options = observation.raw;
                     state.context.awaitingSelection = true;
-
                     state.status = "waiting_for_input";
                     shouldStopExecution = true;
                 }
@@ -506,7 +539,7 @@ export class AgentRuntime {
         return {
             step: state.step,
             decision: {
-                tool: decision.tool,
+                tool: decision.tool || null,
                 type: decision.type,
                 description: decision.description ?? null,
                 toolCalls: decision.result ?? [],
