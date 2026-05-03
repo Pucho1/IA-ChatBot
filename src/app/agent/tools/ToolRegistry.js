@@ -1,4 +1,6 @@
 
+// esta capa se deberia combinar con la clase execute
+//  para la validaion de lo que son los pasos las herramietas y su ejecucion
 export class ToolRegistry {
   constructor() {
     this.executionTools = new Map();

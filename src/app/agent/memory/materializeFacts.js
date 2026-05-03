@@ -1,7 +1,5 @@
 export function materializeFacts( factCandidate ) {
 
-	console.log("Materializing facts:", factCandidate);
-
     const HARD_KEYS = ["location", "occupation", "name", "age"];
 
     if ( !Array.isArray(factCandidate) || factCandidate.length === 0 ) return [];

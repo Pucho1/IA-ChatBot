@@ -8,21 +8,13 @@ export class ArgumentResolver {
    * @param {*}  
    * @returns object type {resolvedArgs, missingFields }
    */
-  async resolve({ args, schema, state }) {
+  async resolve({ args, schema, state, memory }) {
     const resolved = { ...args }; // objeto con todos los argumnetos resueltos por el llm, creo una copio para no romper nada.
     const missingFields = [];
 
     const shape = schema.shape; // argumentos obtenidos del esquema de la tool.
 
-    const context = {
-      args,
-      state,
-      currentInput: state.currentInput,
-      schema,
-      history: state.history,
-      facts: state.memory?.facts || [], // esto no existe en mi state
-      lastStep: state.history[state.history.length - 1],
-    };
+    const context = this.#createContext(args, state, memory);
 
     // Loop por schema
     for (const field in shape) {
@@ -35,30 +27,24 @@ export class ArgumentResolver {
 
       let value;
 
-      // 2. intentar resolver con cada unbo de los reslver que tengo y el orden importa ya que vamos 
-      // buscando pirmoero en los lugres con mas relevancia.
+      // 2. intentar resolver con cada uno de los reslver que tengo y el orden importa ya que vamos 
+      // buscando primero en los lugres con mas relevancia.
       for (const resolver of this.resolvers) {
         if (resolver.canResolve(field, context)) {
           value = await resolver.resolve(field, context);
 
-           console.log("Resolver trace:", {
-              field,
-              resolver: resolver.constructor.name,
-              value
-            });
+          console.log("Resolver trace:", {
+            field,
+            resolver: resolver.constructor.name,
+            value,
+          });
 
-          // si lo logro resolver con alguno no pregunto salgo poor el break
+          // si lo logro resolver con alguno no pregunto salgo del loop.
           if (value !== undefined && value !== null && value !== "") {
             resolved[field] = value;
             break;
           };
         };
-
-        // console.log("Resolver trace:", {
-        //   field,
-        //   resolver: resolver.constructor.name,
-        //   value
-        // });
       };
 
       // 3. si no se resolvió → marcar missing
@@ -72,4 +58,19 @@ export class ArgumentResolver {
       missingFields,
     };
   };
+
+  #createContext(args, state, memory) {
+    return {
+      args,
+      state,
+      currentInput: state.currentInput,
+      schema: state.schema,
+      history: state.history,
+      facts: memory.facts || [],
+      lastStep: state.history[state.history.length - 1],
+    };
+  };
+
 };
+
+

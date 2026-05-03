@@ -17,7 +17,7 @@ const MAX_MESSAGES = 10;
 export class Memory {
 
     constructor(state) {
-        this.state = state; // {summary: [], facts: [], messages: []}
+        this.state = state;
     };
 
     #addUserMessage(content) {
@@ -33,35 +33,6 @@ export class Memory {
             content
         });
     };
-
-    /**
-     * Cuando el LLM decide usar una tool, eso es un mensaje del assistant.
-     * @param {nombre de la herramienta} name 
-     * @param {argumentos de la herramienta} args 
-     */
-    addToolCall(name, args) {
-        this.state.messages.push({
-            role: "assistant",
-            tool_call: { // esta propiedad es para marcar que este mensaje no es una respuesta normal del assistant, sino una llamada a una herramienta
-                name: name,
-                args: args
-            },
-        });
-    };
-
-    /**
-     * 
-     * @param {*} name 
-     * @param {*} result 
-     */
-    addToolResult(name, result) {
-        this.state.messages.push({
-            role: "tool",
-            name: name,
-            content: result
-        });
-    };
-
 
     #resolveFact(existing, candidate){
                 
@@ -159,84 +130,6 @@ export class Memory {
     };
 
     /**
-     * Construlle e promp que le vamos a pasar al LLM
-     * @returns Promp que le vamos a pasar al LLM
-     */
-    // buildPrompt({tools}) {
-
-    //     const toolsDescription = tools.length
-    //      ? `
-    //         Puedes usar las siguientes herramientas:
-
-    //         ${tools.map(tool => `
-    //         Nombre: ${tool.name}
-    //         Descripción: ${tool.description}
-    //         Parámetros:
-    //         ${JSON.stringify(tool.parameters, null, 2)}
-    //         `).join("\n")}
-    //         `
-    //     : "No hay herramientas disponibles.";
-
-        
-    //     // Definimos el comportamiento aquí
-
-    //     // Interpretar intención
-    //     // Clasificarla
-    //     // Estructurarla
-    //     // El sistema de mensajes que le vamos a pasar al LLM siempre va a tener esta estructura:
-    //     //{
-    //     //   "type": "final" | "tool",
-    //     //   "tool": string | null,
-    //     //   "args": object | null,
-    //     //   "content": string | null
-    //     // }
-    //     // No "message". No "action". No "text". No "response".
-    //     const systemMessage = {
-    //         role: "system",
-    //         content: `
-    //             Eres un asistente conversacional.
-
-    //             Debes responder SIEMPRE en formato JSON válido con esta estructura:
-
-    //             {
-    //                 "type": "tool" | "final",
-    //                 "tool": string | null,     // Si type = "tool" indica la herramienta a usar sino es null
-    //                 "args": object | null      // Si type = "tool" indica los argumentos para la herramienta sino es null
-    //                 "content": string, | null  // Si type = "final" es la respuesta final al usuario, sino es null 
-    //             }
-
-    //             ${toolsDescription}
-                
-    //             Si necesitas usar una herramienta:
-    //             {
-    //                 - type = "tool"
-    //                 - tool = nombre exacto
-    //                 - args = objeto válido según parámetros
-    //                 - content = null
-    //             }
-
-    //             Si no necesitas herramienta:
-    //             {
-    //                 - type = "final"
-    //                 - tool = null
-    //                 - args = null
-    //                 - content = respuesta al usuario
-    //             }
-    //         `,
-    //     };
-
-    //     const messagesToSend  = [
-    //         systemMessage,
-           
-    //         ...(this.state.summary ? this.state.summary : []),
-    //         ...this.state.messages
-    //     ];
-
-
-    //     return messagesToSend;
-    // };
-
-        /**
      * Devuelve los hechos conocidos del usuario en formato adecuado para el prompt.
      * @returns Arry
      */

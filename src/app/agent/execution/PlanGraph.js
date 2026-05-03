@@ -1,11 +1,3 @@
-/**
- *  validar plan
-    encontrar pasos ejecutables
-    actualizar estado de pasos
-    detectar finalización
-    detectar fallos
- */
-
 export class PlanGraph {
 
   constructor(steps = []) {
@@ -159,7 +151,7 @@ export class PlanGraph {
   };
 
   /**
-   * Verifica si un step existe. 
+   * Verifica si un step existe.
    * @param {*} stepId id del step.
    * @returns El step en cuestion.
    */

@@ -2,24 +2,9 @@ import { BehaviorManager }      from "../behavior/BehaviorManager";
 import { GoalVerifier }         from "../cognition/goal/GoalVerifier";
 import { ReferenceResolver }    from "../cognition/reference/ReferenceResolver";
 import { TransitionResolver }   from "../cognition/transition/TransitionResolver";
+import { MissingInfoGuard }     from "../execution/missingInformationHandler/detectMissingFields";
 import { PlanGraph }            from "../execution/PlanGraph";
-import { MissingInfoGuard }     from "../execution/misinInformationHandler/detectMissingFields";
 
-/**
- * Inicializa estado
-
-    Controla loop
-
-    Incrementa step
-
-    Valida límites, goal, errores
-
-    Procesa decisión
-
-    Decide cuándo terminar
-
-    Guarda historial
- */
 export class AgentRuntime {
 
     constructor({ 
@@ -43,6 +28,7 @@ export class AgentRuntime {
         this.referenceResolver  = new ReferenceResolver();
         this.transitionResolver = new TransitionResolver();
         this.goalVerifier       = new GoalVerifier({ engine });
+        this.Executor           = new Executor(this.registry);
     };
 
     /**
@@ -55,20 +41,22 @@ export class AgentRuntime {
         // Inicializo el contexto de referencia y el estado del agente. El contexto de referencia es 
         // crucial para que el agente pueda entender a qué se refiere el usuario
         // con términos como "esto", "lo anterior", etc., 
-        // lo cual es fundamental para mantener una conversación coherente y relevante.
+
         state.context = {
            ...state.context,
             reference: null,
         };
 
-        // El estado del agente se inicializa con la información proporcionada, 
-        // y se establece el status en "running" para indicar que el agente está activo y procesando la solicitud.
+        // Establesco el status en "running" para indicar que el agente está activo y procesando la solicitud.
         state.status = "running";
 
 
         // 🔹 ROUTING (ANTES DE PLANIFICAR) elijo si es una conversacion o necesito ejecutar una herramienta. 
         // ---Intent = significado lingüístico---  /// Intent dice: qué quiere el usuario
         const interpretation = await this.classifier.getIntent(state.currentInput, state);
+
+        // 🔹 Elijo la ruta que voy a seguir según la interpretación de la intención del usuario.
+        const route = await this.router.route(interpretation);
         
         // 🔹 ResolverReference antes de planificar elijo si es una referencia.
         // ---Referencia = significado contextual---  /// ResolverReference dice: a qué se refiere el usuario con eso, este, lo anterior, etc.
@@ -84,8 +72,8 @@ export class AgentRuntime {
             state,
         });
 
-        console.log("interpretacion de ResolverReference =======>", reference );  
-        console.log("Resultado del TransitionResolver =======>", transition ); //------ esto no vaaaaaaaa
+        console.log("interpretacion de ResolverReference =======>", reference );
+        console.log("Resultado del TransitionResolver =======>", transition );
 
         if (transition.type === "SELECT_OPTION") {
             state.context.selected = reference.value;
@@ -93,18 +81,13 @@ export class AgentRuntime {
             state.context.awaitingSelection = false;
         };
 
-        const isContinuationResetet = {
-            ...interpretation,
-            isContinuation: state.goal === null ? false : interpretation.isContinuation,
-        };
 
-        const route = await this.router.route(isContinuationResetet);
-
-        console.log("interpretacion de la intencion del usuario segun el clasificador =======>", interpretation, {isContinuationResetet} );
+        console.log("interpretacion de la intencion del usuario segun el clasificador =======>", interpretation );
         console.log("Routing decision:", route);
+        console.log("Estado inicial del agente:", state);
 
-        // si es un cambio de objetivo limpio el plan anterior para que no me genere incoherencias y
-        // le doy el nuevo objetivo como norte a mi agente
+
+        // 🔹 Reseteo el plan ya que he cambiado de Goal
         if (transition.shouldResetGoal) {
             console.log("Detectado cambio de objetivo. Limpiando plan anterior...");
 
@@ -112,11 +95,10 @@ export class AgentRuntime {
             state.planGraph = null;          // Forzamos al Engine a crear un plan nuevo
             state.status = "idle";           // Volvemos al estado inicial de planificación
             state.step = 0;                  // Reseteamos el contador de pasos
-            // Mantenemos state.history o state.facts si queremos que el agente 
-            // recuerde lo anterior, pero el PLAN específico se borra.
         };
 
-        if (isContinuationResetet.intent === "meta_instruction") {
+        // 🔹Nuevas instrucciones de comportamiento para el llm respuesta final directa.
+        if (interpretation.intent === "meta_instruction") {
 
             this.behaviorManager.process(state.currentInput, state);
 
@@ -125,7 +107,6 @@ export class AgentRuntime {
             state.planGraph = statusPLanIsComplete ? null : state.planGraph;
             state.goal = statusPLanIsComplete ? null : state.goal;
 
-            // state.status = "completed";
             state.finishedAt = Date.now();
             state.metadata={
                 duration: state.finishedAt - state.startedAt,
@@ -142,11 +123,9 @@ export class AgentRuntime {
 
         state.status = state.status === "idle" ? "running" : state.status; // Si estaba idle por un cambio de objetivo, lo ponemos a running para que siga el proceso normal.
 
-        console.log("Estado inicial del agente:", state);
-
         const requiresTools = route === "execution";
 
-        // Router decide que no se requieren herramientas, genero respuesta final directa sin pasar por el loop de planificación y ejecución."
+        // 🔹No requiero herramintas respuesta final directa.
         if (!requiresTools) {
 
             const response = await this.engine.generateFinalAnswer({
@@ -179,9 +158,7 @@ export class AgentRuntime {
 
                 const capabilities = this.goalVerifier.capabilitiesStatus(state);
 
-                // → GoalVerifier no entiende el goal
-                // → NO saltar planner
-                // → 🔥 Interpreto el goal para capabilities y poder generar el plan en funcion de eso, si no se puede p[ues no se genera plan
+                // → 🔥 Interpreto el goal para capabilities.
                 const hasRequirements = capabilities.required && capabilities.required.length > 0;
                 const nothingMissing = !capabilities.missing || capabilities.missing.length === 0;
 
@@ -221,7 +198,7 @@ export class AgentRuntime {
 
                 console.log("Plan generado:", plan);
 
-                // 🔴 VALIDACIÓN CRÍTICA
+                // 🔴 VALIDACIÓN CRÍTICA ---> adicionar capa de validacion para el plan generado.
                 if (plan.steps.length === 0) {
 
                     console.log("Plan inválido: se requieren tools");
@@ -242,7 +219,9 @@ export class AgentRuntime {
                     continue;
                 };
 
-                state.planGraph = new PlanGraph(plan.steps);
+                state.planGraph = new PlanGraph(plan.steps);  
+                // analizar si la validacion del plan no se deberia hacer en planGrahp 
+                // el tienen lo necesartio para saber si es un plan valido o no.
 
                 state.isReplanning = false;
 
@@ -309,7 +288,6 @@ export class AgentRuntime {
                 /**
                  * Plan bloqueado → replanning
                  */
-                // state.planGraph = null;
                 state.status = "waiting_for_input";
                 continue;
             };
@@ -319,8 +297,6 @@ export class AgentRuntime {
              */
             for (const step of executableSteps) {
 
-                // lopaso antes a pendinete de ejecucion si estaba bloqueado
-                //  --- esto lo pudoiera hacer direcrtamente en el hrahp porque si estas ejecutable es que eres pending
                 if (step.status === "blocked") {
                     state.planGraph.markPending(step.id);
                 };
@@ -328,7 +304,7 @@ export class AgentRuntime {
                 state.planGraph.markRunning(step.id);
 
                 const tool      = this.registry.get(step.tool);
-                const args      = step.args; // cada paso del plan generado por el llm tiene unos argumentos requeridos. argumeto del llm segun la tool enviada
+                const args      = step.args; 
                 const schema    = tool.schema; // de la tool saco el schema como fuente de la verdad de los arg que realmennte definio la herramienta 
 
 
@@ -339,18 +315,18 @@ export class AgentRuntime {
                     schema,
                 });
 
-                // me sercioro de que todos los argumento necesarios para que se eejcute la erramienta esten.
-                // veo que esten todos
+                // me sercioro de que todos los argumentos necesarios para que se ejecute la herramienta esten.
                 const guardResult = this.missingInfoGuard.check({ args: normalizedArgs, schema  });
 
                 console.log("argumento de detect missing fields======>>>>>", { guardResult })
 
-                // que no este ninguno vacio  y como no vuekvoi a generar el plan tengo que buscar dentro de mi contexto qu debe incluir 
-                // lo nuevo escrito por e user 
+                // que no este ninguno vacio y como no vuelvo a generar el plan tengo que buscar dentro de mi contexto qu debe incluir 
+                // lo nuevo escrito por el user 
                 const { resolvedArgs, missingFields } = await this.argumentResolver.resolve({
                     args: normalizedArgs,
                     schema,
                     state,
+                    memory: this.memory,
                 });
 
                 console.log("argumento resuletos y campos faltantes =======>", {resolvedArgs}, {missingFields})
@@ -421,6 +397,7 @@ export class AgentRuntime {
                 console.log("este es el resultado de ejecutar la erramienta o el resultado si fallo algo dentro de los parametro necesarios para ello =====>", observation);
 
                 let shouldStopExecution = false;
+                
                 // manejo el estado en el que esta mi paso segun el rsultado de la ejecucion
                 //  de mi errramienta o de mi decicion
                 if (observation.type === "blocked") {
@@ -479,38 +456,7 @@ export class AgentRuntime {
         return this.buildResponse(state);
     };
 
-    /**
-     *  Ejecuta una herramienta específica con los argumentos proporcionados.
-     *  Esto es crucial para que el agente pueda interactuar con su entorno y obtener la información
-     *  o realizar las acciones necesarias para cumplir su objetivo.
-     * @param {*} step
-     * @param {*} syntheticId
-     * @returns
-     */
-    async executeTool(step, syntheticId) {
-
-        try {
-            const result = await this.registry.execute(step.tool, step.args);
-
-            return {
-                id: syntheticId,
-                success: true,
-                result,
-                done: false, // ??
-                error: null,
-            };
-
-        } catch (error) {
-            return {
-                id: syntheticId,
-                success: false,
-                error: error.message || "Unknown error",
-                done: false,
-                result: null,
-            };
-        };
-    };
-
+  
     /**
      * Segun el estado determina si continua o no el loop.
      * @param {*} state 
@@ -535,7 +481,6 @@ export class AgentRuntime {
      */
     #createStepRecord(state, decision, observation) {
 
-        console.log("esta es la observation y la decicion que guardo ----->", observation, decision)
         return {
             step: state.step,
             decision: {
@@ -565,10 +510,9 @@ export class AgentRuntime {
         const duration  = state.finishedAt - state.startedAt; // Es vital para telemetría y saber si tu agente es lento.
         const lastStep = state.history[state.history.length - 1];
 
-        // Esto es oro puro para debugging. Te muestra exactamente qué pasó durante la ejecución del agente.
         console.log("Estado final del agente:", {state}, {lastStep}, {response});
 
-        const output = response ? response : state.status === "waiting_for_input"  ? lastStep?.observation?.toolResults : lastStep?.decision?.output ?? null;
+        const output = response || state.status === "waiting_for_input"  ? lastStep?.observation?.toolResults : lastStep?.decision?.output ?? null;
             
         this.memory.addAssistantResponse(output); // guardo la respuesta final del agente en la memoria
 
@@ -579,21 +523,7 @@ export class AgentRuntime {
             timestamp: Date.now()
         };
 
-        // if (state.status === "completed") {
-        //     state.goal = null;
-        //     state.planGraph = null;
-        //     state.context = {
-        //         ...state.context,
-        //         awaitingSelection: false,
-        //         selected: null,
-        //         options: null,
-        //         skipSearch: false,
-        //     };
-        // }
-
         return{
-            // El agente se considera exitoso si llega a una decisión final antes de alcanzar el límite de pasos.
-            //  Si alcanza el límite de pasos sin llegar a una decisión final, se considera que no tuvo éxito.
             success: state.status === "completed",
             output: output, 
             error: state.error,
@@ -609,7 +539,7 @@ export class AgentRuntime {
     /**
      * Construye el estado de ejecución que se le va a pasar al motor de planificación y ejecución del agente.
      *  Este estado incluye información sobre los pasos completados, los pasos fallidos, 
-     * si hay una selección pendiente por parte del usuario, y los datos disponibles en el contexto.
+     *  si hay una selección pendiente por parte del usuario, y los datos disponibles en el contexto.
      *  Es crucial para que el motor pueda tomar decisiones informadas sobre qué hacer a continuación.
      * @param {*} state 
      * @returns 

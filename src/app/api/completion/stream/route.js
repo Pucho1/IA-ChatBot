@@ -1,21 +1,21 @@
-import { AgentRuntime } from "@/app/agent/runtime/agentRuntime";
-import { AgentEngine } from "@/app/agent/AgentEngine";
-import { ToolRegistry } from "@/app/agent/tools/ToolRegistry";
-import { rateLimit } from "@/app/helpers/retaeLimits";
+import { AgentRuntime }   from "@/app/agent/runtime/agentRuntime";
+import { AgentEngine }    from "@/app/agent/AgentEngine";
+import { ToolRegistry }   from "@/app/agent/tools/ToolRegistry";
+import { rateLimit }      from "@/app/helpers/retaeLimits";
 import { createMemoryStore } from "@/app/agent/memory/memoryStore";
-import { AgentRouter } from "@/app/agent/routing/AgentRouter";
+import { AgentRouter }       from "@/app/agent/routing/AgentRouter";
 
 import { cognitiveTools } from "@/app/agent/tools/cognitiveTools ";
 import { executionTools } from "@/app/agent/tools/executionTools";
-import { ArgumentNormalizer } from "@/app/agent/argumentHandler/ArgumentNormalizer";
-import { ArgumentResolver } from "@/app/agent/argumentHandler/ArgumentResolver";
+import { ArgumentNormalizer }     from "@/app/agent/argumentHandler/ArgumentNormalizer";
+import { ArgumentResolver }       from "@/app/agent/argumentHandler/ArgumentResolver";
 import { createDefaultResolvers } from "@/app/agent/argumentHandler/resolvers";
 import { AgentSessionStore } from "@/app/agent/memory/AgentSessionStore";
-import { IntentClassifier } from "@/app/agent/routing/intenteClassifier/IntentClassifier";
+import { IntentClassifier }  from "@/app/agent/routing/intenteClassifier/IntentClassifier";
 
 
 const memoryStore = new Map(); // memria para el contexto del agente
-const sessionStore = new AgentSessionStore(); // memoria para el estado del agente
+const sessionStore = new AgentSessionStore();
 
 export async function POST(req) {
 
@@ -27,8 +27,8 @@ export async function POST(req) {
 	};
 
   let { messages }          = await req.json();
-  const memory              = createMemoryStore(memoryStore, ip); // Asegura que la memoria para esta IP esté inicializada
-  const registry            = new ToolRegistry(); // Una sola fuente de verdad
+  const memory              = createMemoryStore(memoryStore, ip);
+  const registry            = new ToolRegistry();
   const argumentNormalizer  = new ArgumentNormalizer();
   const intentClassifier    = new IntentClassifier();
   const router              = new AgentRouter();
@@ -86,10 +86,9 @@ export async function POST(req) {
 
   memory.handlerUserInput(messages);
 
-  const agentResponse = await runtime.run(state); // manejo la nueva entrada del user teniendo en cuante el estado actual
+  const agentResponse = await runtime.run(state);
 
-  sessionStore.set(ip, state); // lo guardo despues porque el runtime lo mnodifica  
-  // si lo hiciera antes guardaria un estado antiguo de mi agente
+  sessionStore.set(ip, state); 
 
   console.log("respuest del AgentRuntime ------->", agentResponse);
 

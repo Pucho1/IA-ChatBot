@@ -1,8 +1,25 @@
 import { llmClient } from "@/app/llm/llmClinet";
 import { extractJSON } from "@/app/sanyty/verifyJsonResponse";
 
+
+// estados del intent classifier
+// - social: saludos, despedidas, preguntas sobre el asistente, etc. No aportan información relevante para cumplir la tarea pero son importantes para la interacción social.
+// - provide_info: el usuario aporta información útil para completar una tarea, como datos, hechos, preferencias, etc.
+// - request_action: el usuario pide hacer algo específico, como ejecutar una acción, buscar información, etc. Indica una intención clara de que el asistente realice una tarea concreta.
+// - meta_instruction: el usuario da instrucciones sobre cómo debe comportarse el asistente, como cambiar su estilo de respuesta, pedir que sea más breve, etc. No afectan l atarea.
+
 export class IntentClassifier {
 
+  /**
+   * Clasifica la intención del usuario y si su entrada es una continuación del contexto actual utilizando un enfoque 
+   * híbrido que combina la clasificación inicial de un LLM con análisis deterministas basados en el contenido textual. 
+   * El método construye un prompt detallado para el LLM, obtiene su clasificación inicial y luego aplica reglas adicionales 
+   * para ajustar la clasificación de continuación y la confianza según señales explícitas, la relación textual entre la entrada
+   * actual y la última interacción, y el estado del sistema, proporcionando una evaluación más robusta y matizada de la intención del usuario.
+   * @param {*} input 
+   * @param {*} state 
+   * @returns 
+   */
   async getIntent(input, state) {
     const prompt = this.#buildPrompt(input, state);
 
@@ -307,26 +324,28 @@ export class IntentClassifier {
     }
 
     const det = this.#validarRelacionDeterminista(textA, textB);
+
     const detScore = det.relacionada
       ? parseFloat(det.metricas.vocabularioCompartido) / 100
       : 0;
-    const hasStructure = det.metricas.frasesComunes > 0;
+
+    const hasStructure            = det.metricas.frasesComunes > 0;
     const explicitContinuationCue = this.#hasExplicitContinuationCue(textB);
-    const standaloneRequest = this.#looksLikeStandaloneRequest(textB);
+    const standaloneRequest       = this.#looksLikeStandaloneRequest(textB);
     const pendingUserInputRequest = this.#hasPendingUserInputRequest(state);
-    const bareDataPoint = this.#looksLikeBareDataPoint(textB);
+    const bareDataPoint           = this.#looksLikeBareDataPoint(textB);
 
     let finalIsContinuation = llmResult.isContinuation;
-    let finalConfidence = llmResult.confidence;
+    let finalConfidence     = llmResult.confidence;
 
     if (hasStructure) {
       finalIsContinuation = true;
-      finalConfidence = Math.max(finalConfidence ?? 0, 0.9);
+      finalConfidence     = Math.max(finalConfidence ?? 0, 0.9);
     }
 
     if (!llmResult.isContinuation && detScore > 0.25) {
       finalIsContinuation = true;
-      finalConfidence = 0.7;
+      finalConfidence     = 0.7;
     }
 
     if (llmResult.isContinuation && detScore === 0 && !hasStructure) {

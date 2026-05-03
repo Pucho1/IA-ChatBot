@@ -1,6 +1,5 @@
 
 export class TransitionResolver {
-    constructor() {};
 
     resolve({ intent, reference, state }) {
 
@@ -8,8 +7,7 @@ export class TransitionResolver {
 
         const hasBlockedSteps = state.planGraph?.steps?.some(s => s.status === "blocked");
 
-        // El agente detecta que el usuario ha proporcionado información relevante para desbloquear 
-        // pasos bloqueados en su plan actual.
+        // El agente detecta que el usuario ha proporcionado información relevante para desbloquear pasos bloqueados en su plan actual.
         const providesData = intent.intent === "provide_info";
 
 

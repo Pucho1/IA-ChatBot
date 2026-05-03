@@ -1,4 +1,3 @@
-
 import { llmClient } from "../llm/llmClinet";
 import { BehaviorManager } from "./behavior/BehaviorManager";
 
@@ -23,7 +22,7 @@ export class AgentEngine {
    
         const llmResponse = await llmClient().complete(
             {
-                messages: prompt, // construyo el prompt con la memoria y se lo paso al LLM, espero su respuesta
+                messages: prompt,
                 temperature: 0,
                 tools,
                 tool_choice: {
@@ -34,10 +33,6 @@ export class AgentEngine {
         );
 
         const message = llmResponse.choices[0].message;
-
-        // Eeste mensaje puede ser de dos tipos (1) una respuesta final con un mensaje de texto,
-        //  o (2) una decisión de usar una herramienta con el nombre de la herramienta y los argumentos para esa herramienta.
-        // const message = extractJSON(llmResponse.choices[0].message.content);
 
         if (!message.tool_calls || message.tool_calls.length === 0) {
             throw new Error("Planner returned empty response");
@@ -116,103 +111,6 @@ export class AgentEngine {
         });
 
         return response.choices[0].message.content;
-    };
-
-    /**
-     * Construye el prompt para el LLM basado en el estado actual del agente y la memoria.
-     */
-    buildPrompt(runtimeState, conversationalState) {
-
-        const { goal, step, maxSteps, history } = runtimeState;
-        const { messages, facts, summary }      = conversationalState;
-
-        console.log("paso:" + step + " Construyendo prompt con el siguiente histry del agente:", history);
-
-        const toolSequence = history.flatMap(h => {
-            if (h.decision.type === "tool" && h.observation && h.observation?.toolResults) {
-
-                const assistantMessage = {
-                    role: "assistant",
-                    tool_calls: h.decision.toolCalls?.map(call => ({
-                        id: call.id,
-                        type: "function",
-                        function: {
-                            name: call.name,
-                            arguments: JSON.stringify(call.args)
-                        }
-                    }))
-                };
-
-                const toolMessages = h.observation.toolResults.map(call => ({
-                    role: "tool",
-                    tool_call_id: call.id,
-                    content: JSON.stringify({
-                        success:call.success,
-                        result: call.result ?? null,
-                        error: call.error ?? null
-                    }),
-                }));
-
-                return [assistantMessage, ...toolMessages];
-            }
-            return [];
-        });
-
-
-        const systemMessage = {
-            role: "system",
-            content: `
-               You are an AI planning system.
-
-                Your task is to convert a user goal into a structured execution plan.
-
-                The plan must be returned as valid JSON.
-
-                Rules:
-                - Use ONLY available tools.
-                - Each step must reference a valid tool.
-                - Steps may belong to execution groups.
-                - Steps with the same group may be executed in parallel.
-                - Groups must be executed in ascending order.
-                - Do not execute tools. Only plan them.
-
-                Return ONLY JSON.
-
-                Plan format:
-
-                {
-                "steps": [
-                    {
-                        "id": number,
-                        "description": string,
-                        "tool": string,
-                        "args": object,
-                        "group": number
-                    }
-                ]
-                }
-            `
-        };
-
-        const runtimeMessage = {
-            role: "system",
-            content: `
-                === Agent Goal ===
-                ${goal}
-
-                === Execution State ===
-                Current Step: ${step} of ${maxSteps}
-            `
-        };
-
-        return [
-            systemMessage,
-            runtimeMessage,
-            ...messages.map(m => ({ role: m.role, content: m.content })),
-            ...facts,
-            ...summary,
-            ...toolSequence
-        ];
     };
 
     /**

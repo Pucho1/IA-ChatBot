@@ -6,8 +6,8 @@ export function createMemoryStore(memoryStore, ip) {
 
     if (!memory) {
         memory = {
-          summary: [], // ----> esto aporta Contexto al chat
-          facts: [], // ----> esto aporta Identidad al chat
+          summary: [],  // ----> esto aporta Contexto al chat
+          facts: [],    // ----> esto aporta Identidad al chat
           messages: [], // ----> esto aporta fluides al chat
           updatedAt: Date.now(),
         };

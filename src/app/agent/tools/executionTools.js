@@ -53,7 +53,7 @@ export const executionTools = [
     schema: z.object({
       location: z.string()
         .describe("La ciudad y el país, ej: 'Madrid, ES' o 'Buenos Aires'"),
-      unit: z.enum(["celsius", "fahrenheit"])
+        unit: z.enum(["celsius", "fahrenheit"])
         .default("celsius")
         .describe("La unidad de medida de temperatura")
     }),

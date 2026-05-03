@@ -1,12 +1,9 @@
 export class ReferenceResolver {
-    constructor() {};
 
     resolve({ input, state }){
 
-        console.log("Resolviendo referencia para input:", {input}, "con estado:", {state});
-
-        if (state?.history?.length === 0) {
-            return null; // No hay historia, no se puede resolver referencia
+        if (state?.history?.length === 0) { // No hay historia, no se puede resolver referencia
+            return null; 
         };
 
         const lower = input.toLowerCase();
@@ -19,18 +16,10 @@ export class ReferenceResolver {
 
         if (index === null) return null;
 
-        console.log("Índice detectado en la referencia ------->:", {index});
-
-
         // Obtengo el último resultado útil de herramienta del estado para resolver la referencia.
-       const lastListResult = this.#lastListResult(state, index); /////////-----
+       const lastListResult = this.#lastToolResult(state, index); /////////-----
 
-
-        console.log("Último resultado de herramienta encontrado para resolver referencia:", {lastListResult});
-
-        if (!lastListResult) return null; // No se encontró un resultado de herramienta para resolver la referencia
-
-
+        if (!lastListResult) return null;
         return {
             ...lastListResult,
             entity: "unknown",
@@ -44,7 +33,7 @@ export class ReferenceResolver {
      * @param {*} state 
      * @returns 
      */
-    #lastListResult(state, index) {
+    #lastToolResult(state, index) {
 
         if (state.context?.options) {
             const items = state.context.options;

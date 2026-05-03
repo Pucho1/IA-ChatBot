@@ -1,6 +1,4 @@
-// ===============================
 // DEFAULT RULES (GOAL → CAPABILITIES)
-// ===============================
 const DEFAULT_GOAL_CAPABILITY_RULES = [
     {
         name: "booking",
@@ -30,9 +28,7 @@ const DEFAULT_GOAL_CAPABILITY_RULES = [
 ];
 
 
-// ===============================
 // DEFAULT CAPABILITY CHECKS
-// ===============================
 const DEFAULT_CAPABILITY_CHECKS = {
 
     // Usuario ha seleccionado una opción
@@ -74,9 +70,7 @@ const DEFAULT_CAPABILITY_CHECKS = {
 };
 
 
-// ===============================
-// GOAL VERIFIER
-// ===============================
+
 export class GoalVerifier {
     constructor({
         capabilityChecks = {},

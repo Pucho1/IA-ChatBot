@@ -14,7 +14,6 @@ export class ArgumentNormalizer {
       const errorDetails = result.error.issues.map(i => `${i.path}: ${i.message}`).join(", ");
       throw new Error(`Normalization Failed: ${errorDetails}`);
     }
-
     return result.data;
   };
 
@@ -31,7 +30,7 @@ export class ArgumentNormalizer {
 
       // Prioridad 2: Heurística (Fuzzy Match)
       const potentialMatch = Object.keys(args).find(rawKey => 
-        rawKey.toLowerCase().replace(/_/g, '') === key.toLowerCase().replace(/_/g, '')
+        rawKey.toLowerCase().replaceAll('_', '') === key.toLowerCase().replaceAll('_', '')
       );
 
       if (potentialMatch) {
@@ -42,7 +41,10 @@ export class ArgumentNormalizer {
   };
 
   #tryParse(str) {
-    try { return JSON.parse(str.replace(/```json|```/g, "")); }
-    catch (e) { return {}; }
+    try { 
+      return JSON.parse(str.replaceAll(/```json|```/g, "")); 
+    } catch { 
+        return {};
+      }
   };
 };
