@@ -5,7 +5,7 @@ import { rateLimit }      from "@/app/helpers/retaeLimits";
 import { createMemoryStore } from "@/app/agent/memory/memoryStore";
 import { AgentRouter }       from "@/app/agent/routing/AgentRouter";
 
-import { cognitiveTools } from "@/app/agent/tools/cognitiveTools ";
+import { cognitiveTools } from "@/app/agent/tools/cognitiveTools";
 import { executionTools } from "@/app/agent/tools/executionTools";
 import { ArgumentNormalizer }     from "@/app/agent/argumentHandler/ArgumentNormalizer";
 import { ArgumentResolver }       from "@/app/agent/argumentHandler/ArgumentResolver";

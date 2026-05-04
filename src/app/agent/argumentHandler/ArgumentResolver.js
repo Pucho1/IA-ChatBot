@@ -14,7 +14,7 @@ export class ArgumentResolver {
 
     const shape = schema.shape; // argumentos obtenidos del esquema de la tool.
 
-    const context = this.#createContext(args, state, memory);
+    const context = this.#createContext(args, state, memory, schema);
 
     // Loop por schema
     for (const field in shape) {
@@ -59,12 +59,12 @@ export class ArgumentResolver {
     };
   };
 
-  #createContext(args, state, memory) {
+  #createContext(args, state, memory, schema) {
     return {
       args,
       state,
       currentInput: state.currentInput,
-      schema: state.schema,
+      schema,
       history: state.history,
       facts: memory.facts || [],
       lastStep: state.history[state.history.length - 1],

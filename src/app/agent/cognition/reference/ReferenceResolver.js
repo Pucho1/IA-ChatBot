@@ -9,10 +9,10 @@ export class ReferenceResolver {
         const lower = input.toLowerCase();
         let index = null;
 
-        if (lower.includes("primero")) index = 0;
-        if (lower.includes("segundo")) index = 1;
-        if (lower.includes("tercero")) index = 2;
-        if (lower.includes("último"))  index = -1;
+        if (lower.includes("primero") || lower.includes("primera") || lower.includes("1")) index = 0;
+        if (lower.includes("segundo") || lower.includes("segunda") || lower.includes("2")) index = 1;
+        if (lower.includes("tercero") || lower.includes("tercera") || lower.includes("3")) index = 2;
+        if (lower.includes("último") || lower.includes("última"))  index = -1;
 
         if (index === null) return null;
 

@@ -2,6 +2,7 @@ import { BehaviorManager }      from "../behavior/BehaviorManager";
 import { GoalVerifier }         from "../cognition/goal/GoalVerifier";
 import { ReferenceResolver }    from "../cognition/reference/ReferenceResolver";
 import { TransitionResolver }   from "../cognition/transition/TransitionResolver";
+import { Executor }             from "../execution/Executor";
 import { MissingInfoGuard }     from "../execution/missingInformationHandler/detectMissingFields";
 import { PlanGraph }            from "../execution/PlanGraph";
 
@@ -357,7 +358,7 @@ export class AgentRuntime {
 
                     state.planGraph.updateStepArgs(step.id, resolvedArgs);
 
-                    const toolResult = await this.executeTool(
+                    const toolResult = await this.Executor.executeTool(
                         { ...step, args: resolvedArgs },
                         step.id
                     );
@@ -512,7 +513,7 @@ export class AgentRuntime {
 
         console.log("Estado final del agente:", {state}, {lastStep}, {response});
 
-        const output = response || state.status === "waiting_for_input"  ? lastStep?.observation?.toolResults : lastStep?.decision?.output ?? null;
+        const output = this.#handleOutput(response, state, lastStep);
             
         this.memory.addAssistantResponse(output); // guardo la respuesta final del agente en la memoria
 
@@ -534,6 +535,17 @@ export class AgentRuntime {
                 metrics: state.metrics,
             },
         };
+    };
+
+    #handleOutput(response, state, lastStep) {
+
+        if(response) return response;
+
+        if(state.status === "waiting_for_input" ) {
+            return lastStep?.observation?.toolResults;
+        };
+
+        return lastStep?.decision?.output ?? null;
     };
 
     /**
