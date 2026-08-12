@@ -7,6 +7,8 @@ export class ToolRegistry {
     this.cognitiveTools = new Map();
   }
 
+  
+
   /**
    * registra una herramienta en el registry
    * @param {*} name 
@@ -32,6 +34,10 @@ export class ToolRegistry {
     this.cognitiveTools.set(tool.name, tool);
   };
 
+  /**
+   * va;lida que mis tool cumplan con los requisitos minimos de nombre, handler y schema
+   * @param {*} tool
+   */
   #validateTool(tool) {
     if (!tool?.name || !tool?.handler || !tool?.schema) {
       throw new Error(`Invalid tool definition: ${tool?.name}`);
@@ -114,4 +120,7 @@ export class ToolRegistry {
 
     return JSON.parse(JSON.stringify(result));
   };
+
+
+
 };

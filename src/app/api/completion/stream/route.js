@@ -41,7 +41,7 @@ export async function POST(req) {
       planGraph : null,        // El plan que el agente genera para cumplir su objetivo.
       status    : "idle",      // "idle" | "planning" | "executing" | "observing" | "evaluating" | "replanning" | "completed"
       step      : 0,           // Paso actual del agente, se incrementa en cada iteración del loop
-      maxSteps  : 10,           // Pasos máximos permitidos
+      maxSteps  : 10,          // Pasos máximos permitidos
       history   : [],          // Historial de decisiones y observaciones para mantener el contexto y Fuente única de verdad
       error     : null,        // Información de error en caso de fallo
       startedAt : Date.now(),  // Timestamp de inicio para calcular duración total
