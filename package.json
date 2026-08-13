@@ -11,6 +11,7 @@
   "dependencies": {
     "@ai-sdk/openai": "^3.0.18",
     "@ai-sdk/react": "^3.0.50",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "ai": "^6.0.48",
     "next": "16.1.4",
     "openai": "^6.16.0",

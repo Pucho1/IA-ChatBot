@@ -2,7 +2,7 @@
  *  Obtengo un token de acceso de Auth0 usando el flujo de credenciales de cliente.
  * @returns  Una promesa que resuelve con la respuesta de la solicitud de token.
  */
-const GetTokenService = async (): Promise<Response> => {
+const GetTokenService = async () => {
 
     const domain       = process.env.AUTH0_DOMAIN;          // Dominio de Auth0.
     const clientId     = process.env.AUTH0_CLIENT_ID;       // ID del cliente de Auth0.
