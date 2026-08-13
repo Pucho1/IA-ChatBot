@@ -35,9 +35,6 @@ export class MCPClient {
     console.log('Connected successfully.');
 
 
-     const tools = await this.client.listTools();
-    console.log('Available tools:', tools.tools.map(t => t.name).join(', ') || '(none)');
-
     await transport.close();
   }
 }
