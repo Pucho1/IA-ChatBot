@@ -6,7 +6,6 @@ import { createMemoryStore } from "@/app/agent/memory/memoryStore";
 import { AgentRouter }       from "@/app/agent/routing/AgentRouter";
 
 import { cognitiveTools } from "@/app/agent/tools/cognitiveTools";
-import { executionTools } from "@/app/agent/tools/executionTools";
 import { ArgumentNormalizer }     from "@/app/agent/argumentHandler/ArgumentNormalizer";
 import { ArgumentResolver }       from "@/app/agent/argumentHandler/ArgumentResolver";
 import { createDefaultResolvers } from "@/app/agent/argumentHandler/resolvers";
@@ -14,7 +13,7 @@ import { AgentSessionStore } from "@/app/agent/memory/AgentSessionStore";
 import { IntentClassifier }  from "@/app/agent/routing/intenteClassifier/IntentClassifier";
 
 
-const memoryStore = new Map(); // memria para el contexto del agente
+const memoryStore = new Map(); // memoria para el contexto del agente
 const sessionStore = new AgentSessionStore();
 
 export async function POST(req) {
@@ -66,12 +65,10 @@ export async function POST(req) {
     resolvers: createDefaultResolvers(),
   });
 
-  executionTools.forEach(tool => registry.registerExecution(tool));
   cognitiveTools.forEach(tool => registry.registerCognitive(tool));
 
   const agent = new AgentEngine({
     memory,
-    registry, // Puedes pasar el registry si está disponible
   });
 
   const runtime = new AgentRuntime({

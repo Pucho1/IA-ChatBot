@@ -1,7 +1,4 @@
-import {
-  Client,
-//   type AuthProvider,
-} from "@modelcontextprotocol/sdk/client/index.js";
+import {  Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 import { Auth0TokenProvider } from "../auth/Auth0TokenProvider.js";
@@ -13,6 +10,11 @@ export class MCPClient {
     this.tokenProvider = tokenProvider || new Auth0TokenProvider();
   }
 
+  /**
+   * Establece la conexión con el servidor MCP utilizando un transporte HTTP que soporta streaming.
+   * Este método obtiene un token de acceso del proveedor de tokens y lo utiliza para autenticar la conexión.
+   * @returns {Promise<void>}
+   */
   async connect() {
 
     const transport = new StreamableHTTPClientTransport(
@@ -33,8 +35,31 @@ export class MCPClient {
 
     await this.client.connect(transport);
     console.log('Connected successfully.');
-
-
-    await transport.close();
   }
-}
+
+  /**
+   * Lista todas las herramientas disponibles en el servidor MCP.
+   * @returns {Promise<Array>} Una promesa que se resuelve con un array de herramientas.
+   */
+  async listTools() {
+    return this.client.listTools();
+  };
+
+  /**
+   * Llama a una herramienta específica en el servidor MCP.
+   * @param {*} name 
+   * @param {*} args 
+   * @returns {Promise<any>} Una promesa que se resuelve con el resultado de la llamada a la herramienta.
+   */
+  async callTool(name, args) {
+    return this.client.callTool(name, args);
+  };
+
+  /**
+   * Cierra la conexión con el servidor MCP.
+   * @returns {Promise<void>}
+   */
+  async close() {
+    await this.client.close();
+  };
+};

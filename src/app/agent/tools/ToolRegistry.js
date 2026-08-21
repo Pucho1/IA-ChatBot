@@ -10,9 +10,8 @@ export class ToolRegistry {
   
 
   /**
-   * registra una herramienta en el registry
+   * Registra una herramienta en el registry
    * @param {*} name 
-   * @param {*} handler 
    */
   registerExecution(tool) {
     this.#validateTool(tool);
@@ -35,7 +34,7 @@ export class ToolRegistry {
   };
 
   /**
-   * va;lida que mis tool cumplan con los requisitos minimos de nombre, handler y schema
+   * Valida que mis tool cumplan con los requisitos minimos de nombre, handler y schema
    * @param {*} tool
    */
   #validateTool(tool) {
@@ -49,6 +48,10 @@ export class ToolRegistry {
   // MANIFESTS
   // =============================
 
+  /**
+   *  Obtiene listado de las herramientas de ejecucion registradas en el registry
+   * @returns 
+   */
   getExecutionManifest() {
     return Array.from(this.executionTools.values()).map(this.#toLLMFormat);
   };
@@ -120,7 +123,5 @@ export class ToolRegistry {
 
     return JSON.parse(JSON.stringify(result));
   };
-
-
 
 };

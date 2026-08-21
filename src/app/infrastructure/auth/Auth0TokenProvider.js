@@ -7,8 +7,8 @@ import GetTokenService from "./GetTokenService.js";
 // }
 
 export class Auth0TokenProvider {
-   accessToken = null;
-   expiresAt = 0;
+  accessToken = null;
+  expiresAt = 0;
 
   /**
    * Obtengo el token de acceso de Auth0. Si el token actual es válido, lo devuelve; de lo contrario, solicita un nuevo token.
