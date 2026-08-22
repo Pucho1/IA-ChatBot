@@ -38,10 +38,12 @@ export class ToolRegistry {
    * @param {*} tool
    */
   #validateTool(tool) {
-    if (!tool?.name || !tool?.handler || !tool?.schema) {
-      throw new Error(`Invalid tool definition: ${tool?.name}`);
+    if (!tool?.name || !tool?.schema) {
+      throw new Error(
+          `Invalid tool definition: ${tool?.name}`
+      );
     }
-  };
+  }
 
 
   // =============================
@@ -97,31 +99,6 @@ export class ToolRegistry {
 
   listExecution() {
     return Array.from(this.executionTools.keys());
-  };
-
-
-  /**
-   * ejecuta la herramienta con los argumentos dados
-   * @param {*} name
-   * @param {*} args
-   * @returns
-   */
-   async execute(name, args) {
-    const tool = this.executionTools.get(name);
-
-    if (!tool) {
-      throw new Error(`Tool "${name}" not registered`);
-    }
-
-    const parsed = tool.schema.safeParse(args);
-
-    if (!parsed.success) {
-      throw new Error(parsed.error.message);
-    }
-
-    const result = await tool.handler(parsed.data);
-
-    return JSON.parse(JSON.stringify(result));
   };
 
 };
