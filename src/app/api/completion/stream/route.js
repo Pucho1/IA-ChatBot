@@ -11,6 +11,7 @@ import { ArgumentResolver }       from "@/app/agent/argumentHandler/ArgumentReso
 import { createDefaultResolvers } from "@/app/agent/argumentHandler/resolvers";
 import { AgentSessionStore } from "@/app/agent/memory/AgentSessionStore";
 import { IntentClassifier }  from "@/app/agent/routing/intenteClassifier/IntentClassifier";
+import { mcpClientManager } from "@/app/infrastructure/mcp/mcpManagerInstance";
 
 
 const memoryStore = new Map(); // memoria para el contexto del agente
@@ -60,6 +61,10 @@ export async function POST(req) {
   } else {
     state.currentInput = messages;
   };
+
+  const tools = await mcpClientManager.getTools();
+
+  console.log("herramientas disponibles en el cliente MCP ------->", tools);
 
   const argumentResolver = new ArgumentResolver({
     resolvers: createDefaultResolvers(),
