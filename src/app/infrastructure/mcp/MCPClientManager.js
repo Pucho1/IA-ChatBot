@@ -1,5 +1,13 @@
 import { MCPClient } from "./MCPClient.js";
 
+// Esta clase es un objeto que administra un recurso de larga duración.
+// - gestionar la instancia del cliente
+// - controlar initialization
+// - evitar conexiones duplicadas
+// - mantener el catálogo de tools
+// - reutilizar el cliente
+// - ejecutar tools
+
 export class MCPClientManager {
   constructor(tokenProvider) {
     this.tokenProvider = tokenProvider;
@@ -20,9 +28,10 @@ export class MCPClientManager {
     }
     // Si ya hay una inicialización en curso, espera a que termine
     if (this.initializationPromise) {
-      return this.initializationPromise;
+      return this.initializationPromise; // esto como es una  no habria que esperarla
     }
 
+    // revisar este flujo 
     this.initializationPromise = this.#initializeInternal();
 
     try {
@@ -48,12 +57,22 @@ export class MCPClientManager {
     this.tools = tools;
   };
 
+  /**
+   *  Devuelve la lista de herramientas disponibles en el cliente MCP. Si el cliente no está inicializado, lo inicializa primero.
+   * @returns Lista de herramientas disponibles en el cliente MCP.
+   */
   async getTools() {
     await this.initialize();
 
     return this.tools;
   };
 
+  /**
+   * Llama a una herramienta disponible en el cliente MCP. Si el cliente no está inicializado, lo inicializa primero.
+   * @param {*} name 
+   * @param {*} args 
+   * @returns  Resultado de la llamada a la herramienta.
+   */
   async callTool(name, args) {
     await this.initialize();
 
