@@ -1,26 +1,37 @@
 import { z } from "zod";
 
 export class MCPToolAdapter {
+  /**
+   *  Adapta una herramienta MCP a un formato compatible con el registry de herramientas del agente.
+   * @param {*} tool 
+   * @returns 
+   */
   adapt(tool) {
     if (!tool?.name || !tool?.inputSchema) {
       throw new Error(
         `Invalid MCP tool definition: ${tool?.name}`
       );
-    }
+    };
 
     return {
       name: tool.name,
       description: tool.description ?? "",
       schema: this.#toZod(tool.inputSchema),
     };
-  }
+  };
 
+  /**
+   * Convierte un esquema de entrada de herramienta MCP a un esquema Zod.
+   * @param {*} schema 
+   * @returns Esquema Zod equivalente al esquema de entrada de la herramienta MCP.
+   */
   #toZod(schema) {
-    if (!schema || schema.type !== "object") {
+
+    if (schema?.type !== "object") {
       throw new Error(
         "MCP tool inputSchema must be an object schema"
       );
-    }
+    };
 
     const shape = {};
 
@@ -35,11 +46,16 @@ export class MCPToolAdapter {
       }
 
       shape[name] = field;
-    }
+    };
 
     return z.object(shape);
-  }
+  };
 
+  /**
+   * Convierte un esquema de propiedad de herramienta MCP a un esquema Zod.
+   * @param {*} schema 
+   * @returns Esquema Zod equivalente al esquema de propiedad de la herramienta MCP.
+   */
   #propertyToZod(schema) {
     if (!schema?.type) {
       throw new Error(
