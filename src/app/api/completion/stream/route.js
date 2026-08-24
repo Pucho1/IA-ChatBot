@@ -1,20 +1,18 @@
 import { AgentRuntime }   from "@/app/agent/runtime/agentRuntime";
 import { AgentEngine }    from "@/app/agent/AgentEngine";
-import { ToolRegistry }   from "@/app/agent/tools/ToolRegistry";
 import { rateLimit }      from "@/app/helpers/retaeLimits";
 import { createMemoryStore } from "@/app/agent/memory/memoryStore";
 import { AgentRouter }       from "@/app/agent/routing/AgentRouter";
 
-import { cognitiveTools } from "@/app/agent/tools/cognitiveTools";
 import { ArgumentNormalizer }     from "@/app/agent/argumentHandler/ArgumentNormalizer";
 import { ArgumentResolver }       from "@/app/agent/argumentHandler/ArgumentResolver";
 import { createDefaultResolvers } from "@/app/agent/argumentHandler/resolvers";
 import { AgentSessionStore } from "@/app/agent/memory/AgentSessionStore";
 import { IntentClassifier }  from "@/app/agent/routing/intenteClassifier/IntentClassifier";
-import { mcpClientManager } from "@/app/infrastructure/mcp/mcpManagerInstance";
+import { agentToolProvider } from "@/app/agent/tools/agentToolProviderInstance";
 
 
-const memoryStore = new Map(); // memoria para el contexto del agente
+const memoryStore  = new Map(); // memoria para el contexto del agente
 const sessionStore = new AgentSessionStore();
 
 export async function POST(req) {
@@ -28,11 +26,11 @@ export async function POST(req) {
 
   let { messages }          = await req.json();
   const memory              = createMemoryStore(memoryStore, ip);
-  const registry            = new ToolRegistry();
   const argumentNormalizer  = new ArgumentNormalizer();
   const intentClassifier    = new IntentClassifier();
   const router              = new AgentRouter();
   let state                 = sessionStore.get(ip);
+
 
   if (!state) {
     state = {
@@ -62,19 +60,14 @@ export async function POST(req) {
     state.currentInput = messages;
   };
 
-  const tools = await mcpClientManager.getTools();
+  const registry = await agentToolProvider.getRegistry();
 
-  console.log("herramientas disponibles en el cliente MCP ------->", tools);
 
   const argumentResolver = new ArgumentResolver({
     resolvers: createDefaultResolvers(),
   });
 
-  cognitiveTools.forEach(tool => registry.registerCognitive(tool));
-
-  const agent = new AgentEngine({
-    memory,
-  });
+  const agent = new AgentEngine({ memory });
 
   const runtime = new AgentRuntime({
     engine : agent,
@@ -90,7 +83,7 @@ export async function POST(req) {
 
   const agentResponse = await runtime.run(state);
 
-  sessionStore.set(ip, state); 
+  sessionStore.set(ip, state);
 
   console.log("respuest del AgentRuntime ------->", agentResponse);
 
