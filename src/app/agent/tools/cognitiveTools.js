@@ -10,7 +10,7 @@ export const cognitiveTools = [
           id: z.coerce.number(),
           description: z.coerce.string(),
           tool: z.coerce.string(),
-          args: z.object({}),
+          args: z.record(z.string(), z.unknown()),
           depends_on: z.array(z.coerce.number()).default([]),
         })
       ),

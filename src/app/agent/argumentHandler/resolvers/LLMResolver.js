@@ -14,7 +14,7 @@ export class LLMResolver {
 
     // console.log("schema del field-*-*-*-*-*?>>>>>", {fieldSchema})
 
-    const prompt = this.buildPrompt(currentInput, field, fieldSchema.description)
+    const prompt = this.buildPrompt(currentInput, field, fieldSchema);
 
     const result = await this.llm().complete(
       {

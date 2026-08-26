@@ -9,10 +9,11 @@ export class ArgumentNormalizer {
     // 3. Validación y Coerción (Zod hace el trabajo pesado aquí)
     const result = schema.safeParse(adapted);
 
+
     if (!result.success) {
       // Aquí podrías formatear el error para enviárselo de vuelta al LLM
       const errorDetails = result.error.issues.map(i => `${i.path}: ${i.message}`).join(", ");
-      throw new Error(`Normalization Failed: ${errorDetails}`);
+      throw new Error(`Normalization Failed: ${errorDetails} ----- adapted was: ${JSON.stringify(adapted)}  ---- result was: ${JSON.stringify(result)}`);
     }
     return result.data;
   };

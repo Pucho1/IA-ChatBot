@@ -5,6 +5,7 @@ import { TransitionResolver }   from "../cognition/transition/TransitionResolver
 import { Executor }             from "../execution/Executor";
 import { MissingInfoGuard }     from "../execution/missingInformationHandler/detectMissingFields";
 import { PlanGraph }            from "../execution/PlanGraph";
+import mcpClientManager         from "@/app/infrastructure/mcp/mcpManagerInstance";
 
 export class AgentRuntime {
 
@@ -28,8 +29,8 @@ export class AgentRuntime {
         this.behaviorManager    = new BehaviorManager();
         this.referenceResolver  = new ReferenceResolver();
         this.transitionResolver = new TransitionResolver();
-        this.goalVerifier       = new GoalVerifier({ engine });
-        this.Executor           = new Executor(this.registry);
+        this.goalVerifier       = new GoalVerifier({ engine, registry });
+        this.Executor           = new Executor(mcpClientManager);
     };
 
     /**
