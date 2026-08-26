@@ -75,6 +75,7 @@ export class GoalVerifier {
     constructor({
         capabilityChecks = {},
         goalCapabilityRules = DEFAULT_GOAL_CAPABILITY_RULES,
+        registry = null,
     } = {}) {
         this.capabilityChecks = {
             ...DEFAULT_CAPABILITY_CHECKS,
@@ -82,6 +83,7 @@ export class GoalVerifier {
         };
 
         this.goalCapabilityRules = goalCapabilityRules;
+        this.registry = registry;
     }
 
     /**
@@ -93,8 +95,8 @@ export class GoalVerifier {
         // ⚠️ NO fallback mágico
         if (capabilities.length === 0) {
             return {
-                success: false,
-                missing: ["no_capabilities_defined"],
+                success: this.#hasSuccessfulExecution(state),
+                missing: [],
             };
         }
 
@@ -151,11 +153,20 @@ export class GoalVerifier {
         const check = this.capabilityChecks[capability];
 
         if (!check) {
-            console.warn(`⚠️ Unknown capability: ${capability}`);
-            return false;
+            return state.history?.some(entry =>
+                entry.observation?.success === true &&
+                this.registry?.getExecutionCapabilities(entry.decision?.tool)
+                    .includes(capability)
+            ) ?? false;
         }
 
         return Boolean(check(state));
+    }
+
+    #hasSuccessfulExecution(state) {
+        return state.planGraph?.steps?.some(step =>
+            step.status === "completed"
+        ) ?? false;
     }
 
     /**

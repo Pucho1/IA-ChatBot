@@ -101,4 +101,8 @@ export class ToolRegistry {
     return Array.from(this.executionTools.keys());
   };
 
+  getExecutionCapabilities(toolName) {
+    return this.executionTools.get(toolName)?.capabilities ?? [];
+  };
+
 };

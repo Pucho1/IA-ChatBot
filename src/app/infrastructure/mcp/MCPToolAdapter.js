@@ -17,8 +17,17 @@ export class MCPToolAdapter {
       name: tool.name,
       description: tool.description ?? "",
       schema: this.#toZod(tool.inputSchema),
+      capabilities: this.#getCapabilities(tool),
     };
   };
+
+  #getCapabilities(tool) {
+    const capabilities = tool.capabilities ??
+      tool.annotations?.capabilities ??
+      tool.metadata?.capabilities;
+
+    return Array.isArray(capabilities) ? capabilities : [];
+  }
 
   /**
    * Convierte un esquema de entrada de herramienta MCP a un esquema Zod.
