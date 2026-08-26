@@ -9,7 +9,7 @@ import { ArgumentResolver }       from "@/app/agent/argumentHandler/ArgumentReso
 import { createDefaultResolvers } from "@/app/agent/argumentHandler/resolvers";
 import { AgentSessionStore } from "@/app/agent/memory/AgentSessionStore";
 import { IntentClassifier }  from "@/app/agent/routing/intenteClassifier/IntentClassifier";
-import { agentToolProvider } from "@/app/agent/tools/agentToolProviderInstance";
+import { agentToolProvider } from "@/aplication/agent/agentToolProviderInstance";
 
 
 const memoryStore  = new Map(); // memoria para el contexto del agente

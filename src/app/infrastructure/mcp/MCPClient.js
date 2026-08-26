@@ -52,7 +52,10 @@ export class MCPClient {
    * @returns {Promise<any>} Una promesa que se resuelve con el resultado de la llamada a la herramienta.
    */
   async callTool(name, args) {
-    return this.client.callTool(name, args);
+    return this.client.callTool({
+      name,
+      arguments: args || {},
+    });
   };
 
   /**

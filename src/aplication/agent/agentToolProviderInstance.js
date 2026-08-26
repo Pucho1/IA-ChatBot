@@ -1,6 +1,6 @@
 import { AgentToolProvider } from "./agentToolProvider";
-import { mcpClientManager } from "@/app/infrastructure/mcp/mcpManagerInstance";
 import { cognitiveTools } from "@/app/agent/tools/cognitiveTools";
+import mcpClientManager  from "@/app/infrastructure/mcp/mcpManagerInstance";
 
 /**
  * Instancia singleton de AgentToolProvider para ser utilizada en toda la aplicación.
@@ -8,6 +8,6 @@ import { cognitiveTools } from "@/app/agent/tools/cognitiveTools";
  * Permite obtener el registro de herramientas del agente de manera centralizada y consistente.
  */
 export const agentToolProvider = new AgentToolProvider({
-  mcpClientManager,
+  mcpClientManager ,
   cognitiveTools,
 });

@@ -1,8 +1,8 @@
 
 export class Executor {
-    constructor(registry) {
-        this.registry = registry;
-    };
+    constructor(mcpClientManager) {
+        this.mcpClientManager = mcpClientManager;
+    }
 
     /**
      *  Ejecuta una herramienta específica con los argumentos proporcionados.
@@ -13,7 +13,10 @@ export class Executor {
     async executeTool(step, syntheticId) {
 
         try {
-            const result = await this.registry.execute(step.tool, step.args);
+            const result = await this.mcpClientManager.callTool(
+                step.tool,
+                step.args
+            );
 
             return {
                 id: syntheticId,

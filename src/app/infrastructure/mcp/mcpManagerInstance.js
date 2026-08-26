@@ -3,4 +3,6 @@ import { MCPClientManager }     from "./MCPClientManager.js";
 
 const tokenProvider = new Auth0TokenProvider();
 
-export const mcpClientManager =  new MCPClientManager(tokenProvider);
+const mcpClientManager =  new MCPClientManager(tokenProvider);
+
+export default mcpClientManager;

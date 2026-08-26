@@ -31,7 +31,7 @@ export class AgentToolProvider {
 
     if (!this.initializationPromise) { // Si no hay una inicialización en curso, inicia una nueva
       this.initializationPromise = this.#initialize(); // Inicia la inicialización y guarda la promesa
-    }s
+    }
 
     return this.initializationPromise; // Si ya hay una inicialización en curso, espera a que termine y devuelve el registry
   };
@@ -43,7 +43,7 @@ export class AgentToolProvider {
   async #initialize() {
     try {
       const registry = new ToolRegistry(); // instancia del registry de herramientas del agente
-      const adapter = new MCPToolAdapter(); // instancia del adaptador de herramientas MCP a formato compatible con el registry
+      const adapter  = new MCPToolAdapter(); // instancia del adaptador de herramientas MCP a formato compatible con el registry
 
       // Cognitive tools actuales
       for (const tool of this.cognitiveTools) {
@@ -53,6 +53,9 @@ export class AgentToolProvider {
       // Execution tools provenientes de MCP
       const { tools } = await this.mcpClientManager.getTools(); // obtiene las herramientas del cliente MCP
 
+      console.log("AgentToolProvider: Registering execution tools from MCP:", tools);
+      
+      
       for (const tool of tools) {
         registry.registerExecution(
           adapter.adapt(tool)

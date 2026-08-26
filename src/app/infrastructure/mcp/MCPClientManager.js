@@ -30,6 +30,9 @@ export class MCPClientManager {
     if (this.initializationPromise) {
       return this.initializationPromise; // esto como es una  no habria que esperarla
     }
+    
+    
+    console.log("MCPClientManager: Initializing MCP client...");
 
     // revisar este flujo 
     this.initializationPromise = this.#initializeInternal();
@@ -75,6 +78,8 @@ export class MCPClientManager {
    */
   async callTool(name, args) {
     await this.initialize();
+
+    console.log(`MCPClientManager: Calling tool ${name} with args:`, args);
 
     if (!this.client) {
       throw new Error("MCP client not initialized");
