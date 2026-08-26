@@ -25,26 +25,47 @@ export class AgentEngine {
                 messages: prompt,
                 temperature: 0,
                 tools,
-                tool_choice: {
+                // DeepSeek v4 Flash rejects a forced function in thinking mode.
+                // The system prompt requires this tool and the response is checked below.
+                toolChoice: {
                     type: "function",
-                    function: { name: "generatePlan" }
+                    function: { name: "generatePlan" },
                 },
             }
         );
 
         const message = llmResponse.choices[0].message;
 
+
+        console.log("LLM response for plan generation  inside the enginee---------->:", message);
+
         if (!message.tool_calls || message.tool_calls.length === 0) {
             throw new Error("Planner returned empty response");
         };
 
-        const call = message.tool_calls[0];
+        const call = message.tool_calls.find(
+            toolCall => toolCall.function?.name === "generatePlan"
+        );
 
-        const args = JSON.parse(call.function.arguments || "{}");
+        if (!call) {
+            throw new Error("Planner did not call generatePlan");
+        }
+
+        let args;
+        try {
+            args = JSON.parse(call.function.arguments || "{}");
+        } catch {
+            throw new Error("Planner returned invalid JSON arguments");
+        }
 
         if (!args.steps || !Array.isArray(args.steps)) {
             throw new Error("Invalid plan structure");
         };
+
+        const invalidTool = args.steps.find(step => !registry.has(step.tool));
+        if (invalidTool) {
+            throw new Error(`Planner selected an unavailable execution tool: ${invalidTool.tool}`);
+        }
 
         return args;
     };
@@ -126,6 +147,8 @@ export class AgentEngine {
         const { messages, facts, summary } = conversationalState;
 
         const tools = registry.getExecutionManifest();
+        const requiredCapabilities = capabilities?.required ?? [];
+        const missingCapabilities = capabilities?.missing ?? [];
 
         const toolDescriptions = tools
             .map(t => {
@@ -187,6 +210,13 @@ export class AgentEngine {
                     - Capabilities are NOT tools
                     - Capabilities represent system states, NOT executable actions
                     - You MUST ONLY use tools listed in the TOOLS section
+
+                    =====================
+                    CAPABILITY STATUS
+                    =====================
+
+                    REQUIRED: ${JSON.stringify(requiredCapabilities)}
+                    MISSING: ${JSON.stringify(missingCapabilities)}
 
                     If MODE is "replan":
                     - Assume previous steps were partially executed

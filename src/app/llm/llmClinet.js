@@ -11,7 +11,7 @@ const client = new OpenAI({
 });
 
 export function llmClient() {
-    async function complete ({ messages, temperature, format, tools }){
+    async function complete ({ messages, temperature, format, tools, toolChoice }){
 
         const config = {
             model: "deepseek-v4-flash",
@@ -26,8 +26,11 @@ export function llmClient() {
 
         if (tools) {
             config.tools = tools;
-            config.tool_choice = "auto"; // Dejo que el modelo decida automáticamente qué herramienta usar, si es que necesita usar alguna. Esto es crucial para que el modelo pueda decidir no usar herramientas si no las necesita, lo que puede resultar en respuestas más directas y rápidas cuando las herramientas no son necesarias.
+            config.tool_choice = toolChoice ?? "auto";
             config.temperature = 0; // Si hay herramientas, bajo la temperatura para que las respuestas sean más determinísticas, lo cual es importante para que el modelo tome decisiones más consistentes sobre cuándo usar herramientas y cuáles usar.
+            config.thinking = {
+                type: "disabled"
+            }
         };
 
         console.log("esto es lo que envio ---------->", config)
