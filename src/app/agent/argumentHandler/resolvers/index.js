@@ -5,6 +5,7 @@ import { LLMResolver }      from "./LLMResolver";
 import { llmClient }        from "../../../llm/llmClinet";
 import { ContextResolver }  from "./ContextResolver";
 
+/** Crea las estrategias de resolucion en orden de prioridad. */
 export const createDefaultResolvers = () => {
   return [
     new InputResolver(),   // contexto inmediato (más fiable), primera fuente a consultar para resolver argumentos

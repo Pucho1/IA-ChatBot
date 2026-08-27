@@ -1,5 +1,10 @@
 import { z } from "zod";
 
+/**
+ * Herramientas internas que el agente puede ofrecer al LLM durante la fase
+ * de razonamiento. `generatePlan` define el formato estructurado del plan
+ * que debe devolver el modelo antes de ejecutar herramientas externas.
+ */
 export const cognitiveTools = [
   {
     name: "generatePlan",

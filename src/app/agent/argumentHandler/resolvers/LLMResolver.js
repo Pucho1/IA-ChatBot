@@ -1,12 +1,16 @@
+/** Usa el LLM como ultima estrategia para completar un argumento. */
 export class LLMResolver {
+  /** Guarda la fabrica de cliente LLM. */
   constructor({ llmClient }) {
     this.llm = llmClient;
   };
 
+  /** Indica si hay entrada actual que enviar al LLM. */
   canResolve(field, context) {
     return !!context.currentInput;
   };
 
+  /** Solicita al LLM un valor para el campo indicado. */
   async resolve(field, context) {
     const { currentInput, schema } = context;
 
@@ -28,6 +32,7 @@ export class LLMResolver {
     
   };
 
+  /** Limpia la respuesta y convierte `null` textual en `null`. */
   clean(value) {
     if (value === null || value === undefined) return null;
 
@@ -41,9 +46,7 @@ export class LLMResolver {
       .replace(/^"+|"+$/g, "") // 🔥 quitar comillas externas;
   };
 
-  /**
-   * Construye el prompt para el LLM basado en el estado actual del agente y la memoria.
-   */
+  /** Construye el prompt de extraccion para el campo solicitado. */
   buildPrompt(currentInput, field, fieldSchema) {
     return [
       {

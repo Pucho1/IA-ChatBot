@@ -1,3 +1,4 @@
+/** Convierte hechos extraidos en registros completos y activos. */
 export function materializeFacts( factCandidate ) {
 
     const HARD_KEYS = ["location", "occupation", "name", "age"];

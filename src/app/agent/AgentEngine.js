@@ -1,16 +1,29 @@
 import { llmClient } from "../llm/llmClinet";
 import { BehaviorManager } from "./behavior/BehaviorManager";
 
+/**
+ * Coordina las interacciones entre la memoria, el registro de herramientas y
+ * el modelo de lenguaje. Genera planes de ejecucion, preguntas intermedias y
+ * respuestas finales para las distintas fases del agente.
+ */
 export class AgentEngine {
+    /**
+     * Inicializa el motor con la memoria de la sesion. La memoria se utiliza
+     * para incorporar mensajes, hechos y resumenes a los prompts enviados al LLM.
+     * @param {{memory: object}} params Dependencias del motor.
+     */
     constructor({ memory }) {
         this.memory = memory;
         this.behaviorManager = new BehaviorManager();
     };
 
     /**
-     * Ejecuta un paso del agente, generando una decisión basada en el estado actual.
-     * @param {*} state El estado actual del agente, que incluye el objetivo, el historial de acciones, etc.
-     * @returns
+     * Solicita al LLM un plan mediante la herramienta cognitiva `generatePlan`.
+     * Valida que la respuesta contenga pasos, argumentos JSON correctos y solo
+     * herramientas de ejecucion registradas.
+     * @param {object} params Estado, registro, modo y capacidades del plan.
+     * @returns {Promise<object>} Plan validado con su lista de pasos.
+     * @throws {Error} Si el LLM devuelve una respuesta o plan invalido.
      */
     async generatePlan({ state, history, registry, mode, executionState, capabilities }) {
 
@@ -36,8 +49,6 @@ export class AgentEngine {
 
         const message = llmResponse.choices[0].message;
 
-
-        console.log("LLM response for plan generation  inside the enginee---------->:", message);
 
         if (!message.tool_calls || message.tool_calls.length === 0) {
             throw new Error("Planner returned empty response");
@@ -70,9 +81,7 @@ export class AgentEngine {
         return args;
     };
 
-    /**
-     * Genera la respuesta final para el usuario.
-     */
+    /** Genera la respuesta final usando el objetivo, historial y memoria actual. */
     async generateFinalAnswer({ goal, history, state }) {
 
         const conversationalState = this.memory.getState();
@@ -87,9 +96,7 @@ export class AgentEngine {
         return response.choices[0].message.content;
     };
 
-    /**
-     * Genera la respuesta final para el usuario.
-     */
+    /** Genera una pregunta para solicitar al usuario los campos faltantes. */
     async generateMoreDataQuestion({ goal, missingFields }) {
 
         const prompt = this.buildRequestDataPrompt(goal, missingFields );
@@ -103,12 +110,7 @@ export class AgentEngine {
     };
 
 
-    /**
-     *  Genera una pregunta para que el usuario seleccione una opción de una lista de resultados,
-     *  basada en el objetivo del agente y las opciones disponibles.
-     * @param {*} param0 
-     * @returns 
-     */
+    /** Genera una pregunta para que el usuario elija entre varias opciones. */
     async generateSelectionQuestion({ goal, options }) {
 
         const prompt = this.buildSelectionPrompt(goal, options);
@@ -123,6 +125,7 @@ export class AgentEngine {
         return response.choices[0].message.content;
     };
 
+    /** Envia un prompt de verificacion al LLM y devuelve su respuesta textual. */
     async executeVerificationGoal(prompt) {
 
         const response = await llmClient().complete({
@@ -135,12 +138,9 @@ export class AgentEngine {
     };
 
     /**
-     * Construye el prompt para el LLM basado en el estado actual del agente y la memoria, 
-     * específicamente para la fase de planificación.
-     * @param {*} state 
-     * @param {*} registry 
-     * @param {*} conversationalState 
-     * @returns 
+     * Construye el prompt de planificacion con el objetivo, capacidades,
+     * herramientas disponibles, progreso y contexto conversacional.
+     * @returns {Array<object>} Mensajes listos para enviar al LLM.
      */
     buildPlannerPrompt(state, registry, conversationalState, mode, executionState, capabilities) {
 
@@ -239,7 +239,7 @@ export class AgentEngine {
                     - It is better to leave arguments empty than to guess
 
                     - Last tool result:
-                    ${this.extractLastToolResult(state.history)}
+                    ${this.#extractLastToolResult(state.history)}
                     
                     RULE:
                     - Use tools ONLY to achieve the missing capabilities
@@ -278,10 +278,7 @@ export class AgentEngine {
         ];
     };
 
-    /***
-     * Construye el prompt para generar la respuesta final al usuario, 
-     * incluyendo un resumen de la ejecución y el comportamiento del agente.
-     */
+    /** Construye el prompt de respuesta final con memoria, reglas y resultados. */
     buildFinalPrompt(goal, history, conversationalState, state) {
  
         const { messages, facts, summary } = conversationalState;
@@ -328,13 +325,7 @@ export class AgentEngine {
         ];
     };
 
-    /**
-     *  Construye el prompt para generar una pregunta al usuario solicitando información adicional,
-     *  basada en los campos faltantes necesarios para ejecutar una herramienta y el objetivo del agente.
-     * @param {*} goal 
-     * @param {*} missingFields 
-     * @returns 
-     */
+    /** Construye el prompt que solicita exclusivamente los campos faltantes. */
     buildRequestDataPrompt(goal, missingFields) {
 
         const fieldsText = missingFields.map(f => `- ${f}`).join("\n");
@@ -365,13 +356,7 @@ export class AgentEngine {
         ];
     };
 
-    /**
-     *  Construye el prompt para generar una pregunta al usuario solicitando que seleccione una opción de una lista de resultados,
-     *  basada en el objetivo del agente y las opciones disponibles.
-     * @param {*} goal 
-     * @param {*} options 
-     * @returns 
-     */
+    /** Construye el prompt que presenta opciones y solicita una seleccion. */
     buildSelectionPrompt(goal, options) {
 
         const optionsText = options.map((item, i) => {
@@ -405,7 +390,8 @@ export class AgentEngine {
         ];
     };
 
-    extractLastToolResult(history) {
+    /** Extrae del historial las herramientas utilizadas hasta el momento. */
+    #extractLastToolResult(history) {
         return history
             .filter(h => h.decision?.tool)
             .map(h => h.decision.tool);

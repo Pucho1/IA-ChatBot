@@ -1,5 +1,5 @@
 
-
+/** Decide como combinar un hecho nuevo con uno ya existente. */
 export function resolveFact(existing, candidate) {
 
   // Caso A — No existe

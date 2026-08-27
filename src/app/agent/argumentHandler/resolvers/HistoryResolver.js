@@ -1,8 +1,11 @@
+/** Resuelve argumentos desde la entrada actual y resultados del historial. */
 export class HistoryResolver {
+  /** Indica si existe historial que consultar. */
   canResolve(field, context) {
     return context.history && context.history.length > 0;
   }
 
+  /** Busca primero en la entrada actual y despues en resultados recientes. */
   resolve(field, context) {
     const { history, currentInput, schema } = context;
 
@@ -46,6 +49,7 @@ export class HistoryResolver {
   // ------------------------
   // VALIDACIÓN (GENÉRICA)
   // ------------------------
+  /** Filtra valores ausentes, incompatibles o poco fiables. */
   #isValid(field, value, schema) {
     if (value === undefined || value === null) return false;
 
@@ -79,11 +83,13 @@ export class HistoryResolver {
   // ------------------------
   // INPUT PARSING
   // ------------------------
+  /** Indica si el campo admite extraccion directa desde el texto. */
   #isUserField(field) {
     const userFields = ['passengerName', 'from', 'to', 'location'];
     return userFields.includes(field);
   };
 
+  /** Extrae valores conocidos mediante patrones simples de texto. */
   #extractFromText(field, text) {
     if (!text || typeof text !== 'string') return null;
 
@@ -104,6 +110,7 @@ export class HistoryResolver {
     return value;
   };
 
+  /** Detecta valores demasiado cortos o poco utiles. */
   #isGarbage(value) {
     const blacklist = ["el", "la", "los", "las", "abril", "mañana", "hoy"];
 
@@ -116,6 +123,7 @@ export class HistoryResolver {
   // ------------------------
   // HISTORY SEARCH
   // ------------------------
+  /** Busca un campo dentro de una lista de resultados. */
   #findInArray(field, array) {
     for (const item of array) {
       if (item && typeof item === 'object' && item[field]) {

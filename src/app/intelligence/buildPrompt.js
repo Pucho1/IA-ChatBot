@@ -1,7 +1,14 @@
 /**
- * 
- * @param {*} param0 
- * @returns 
+ * Construye la lista de mensajes que se enviara al modelo de lenguaje.
+ *
+ * El contexto se compone en un orden estable: instrucciones del sistema,
+ * hechos conocidos del usuario, resumen de la conversacion y mensajes recientes.
+ * Los hechos se incluyen como contexto adicional solo cuando existen, mientras
+ * que el resumen y los mensajes se incorporan directamente desde la memoria.
+ *
+ * @param {{memory: {facts: Array, summary?: Array, messages: Array}}} params
+ *   Memoria conversacional que aporta los datos del prompt.
+ * @returns {Array<{role: string, content: string}>} Mensajes listos para el LLM.
  */
 
 export function buildPrompt({ memory }) {
@@ -13,8 +20,8 @@ export function buildPrompt({ memory }) {
       };
 
     const messagesToSend  = [
-        // retorno el array de mensajes a enviar al modelo
-        //  system + facts +  resumen (si lo hay) + mensajes recientes
+        // El modelo recibe primero las instrucciones y despues el contexto
+        // persistido y la conversacion reciente.
         systemMessage,
         ...(memory.facts.length
         ? [

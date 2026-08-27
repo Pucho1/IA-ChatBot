@@ -1,4 +1,13 @@
+/** Normaliza y valida los argumentos generados para una herramienta. */
 export class ArgumentNormalizer {
+
+  
+  /**
+   * Limpia, adapta al schema y valida los argumentos recibidos.
+   * @param {{args: object|string, schema: object}} params Argumentos y schema Zod.
+   * @returns {object} Argumentos validados y coercionados.
+   * @throws {Error} Si los argumentos no cumplen el schema.
+   */
   normalize({ args, schema }) {
     // 1. Limpieza inicial (por si el LLM envió basura alrededor del JSON)
     const rawArgs = typeof args === 'string' ? this.#tryParse(args) : (args || {});
@@ -18,6 +27,7 @@ export class ArgumentNormalizer {
     return result.data;
   };
 
+  /** Ajusta nombres exactos o equivalentes ignorando guiones bajos. */
   #adaptToSchema(args, schema) {
     const shape = schema.shape;
     const adapted = {};
@@ -41,6 +51,7 @@ export class ArgumentNormalizer {
     return adapted;
   };
 
+  /** Intenta convertir una cadena JSON en un objeto. */
   #tryParse(str) {
     try { 
       return JSON.parse(str.replaceAll(/```json|```/g, "")); 

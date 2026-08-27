@@ -1,6 +1,7 @@
 import { Memory } from "./memory";
 
 
+/** Obtiene o crea la memoria asociada a una sesion y devuelve su fachada. */
 export function createMemoryStore(memoryStore, ip) {
     let  memory = memoryStore.get(ip); // obtengo la memoria asociada a esa IP, si es que existe
 

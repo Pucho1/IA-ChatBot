@@ -14,16 +14,15 @@ const manager = new MCPClientManager(new Auth0TokenProvider());
 const tools1 = await manager.getTools();
 const tools2 = await manager.getTools();
 
+
+
 console.log(
-  "Tools 1:",tools1.tools.map((tool) => ({
-    name: tool.name,
-    description: tool.description,
-    inputSchema: tool.inputSchema,
-  })),
+  "Tools 1 ======> :",tools1, 
   "Tools 2:",tools2.tools.map((tool) => ({
     name: tool.name,
     description: tool.description,
     inputSchema: tool.inputSchema,
+    metadata: tool._meta.fastmcp,
   })),
   // tools1.map((tool) => ({
   //   name: tool.name,

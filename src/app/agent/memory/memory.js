@@ -4,22 +4,40 @@ import { materializeFacts } from "./materializeFacts";
 import { maybeExtractFacts } from "@/app/intelligence/maybeExtractFacts";
 
 
+/** Numero maximo de mensajes recientes que se conservan sin resumir. */
 const MAX_MESSAGES = 10;
 
 /**
- * Memory encapsula el conocimiento del estado conversacional
- * Decide cómo se guardan mensajes
- * Decide cómo se almacenan facts
- * Decide cómo se resuelven conflictos
- * Decide cuándo resumir
- * Construye el contexto para el LLM
+ * Gestiona la memoria conversacional del agente.
+ *
+ * La memoria mantiene tres piezas de informacion dentro de `state`:
+ * - `messages`: mensajes recientes de usuario y asistente.
+ * - `facts`: hechos conocidos del usuario, extraidos de sus mensajes.
+ * - `summary`: resumen de los mensajes que dejaron de estar en la ventana reciente.
+ *
+ * Tambien decide como resolver conflictos entre hechos nuevos y existentes,
+ * y construye el contexto que consumira el modelo de lenguaje.
  */
 export class Memory {
 
+    /**
+     * Crea una fachada sobre el estado compartido de una sesion.
+     *
+     * @param {object} state Estado mutable de la sesion del agente.
+     * @param {Array} state.messages Lista de mensajes de la conversacion.
+     * @param {Array} state.facts Hechos conocidos del usuario.
+     * @param {Array} state.summary Resumen de la conversacion.
+     */
     constructor(state) {
         this.state = state;
     };
 
+    /**
+     * Anade un mensaje de usuario a la conversacion.
+     *
+     * @param {*} content Contenido del mensaje recibido.
+     * @returns {void}
+     */
     #addUserMessage(content) {
         this.state.messages.push({
             role: "user",
@@ -27,6 +45,12 @@ export class Memory {
         });
     };
 
+    /**
+     * Anade una respuesta del asistente a la conversacion.
+     *
+     * @param {*} content Contenido de la respuesta.
+     * @returns {void}
+     */
     #addAssistantMessage(content) {
         this.state.messages.push({
             role: "assistant",
@@ -34,6 +58,18 @@ export class Memory {
         });
     };
 
+    /**
+     * Decide como resolver un hecho nuevo frente a uno ya almacenado.
+     *
+     * Las reglas priorizan los hechos proporcionados por el usuario, evitan
+     * duplicados, protegen los hechos duros frente a inferencias y acumulan
+     * valores distintos cuando el hecho existente es blando.
+     *
+     * @param {object|undefined} existing Hecho activo ya almacenado.
+     * @param {object} candidate Hecho materializado que se quiere guardar.
+     * @returns {{type: string, reason?: string}} Accion a realizar: `CREATE`,
+     *   `REPLACE`, `APPEND`, `IGNORE` o `MARK_CONFLICT`.
+     */
     #resolveFact(existing, candidate){
                 
         // Caso A — No existe
@@ -87,6 +123,15 @@ export class Memory {
         return { type: "IGNORE" };
     };
 
+    /**
+     * Aplica las acciones de resolucion y actualiza los hechos de la sesion.
+     *
+     * Los hechos nuevos se crean, reemplazan o acumulan segun el resultado de
+     * {@link #resolveFact}. Los conflictos marcados no se modifican aqui.
+     *
+     * @param {object[]} materializedFacts Hechos listos para almacenar.
+     * @returns {void}
+     */
     #storeFact(materializedFacts) {
         for ( const factCandidate of materializedFacts ) {
 
@@ -118,8 +163,10 @@ export class Memory {
     };
 
     /**
-     * Ananlisa cada mensaje para saber si este contine un fact o no.
-     * @param {*} rawMessage mensaje entrante del  usuario.
+     * Extrae hechos de un mensaje y los almacena tras materializarlos.
+     *
+     * @param {*} rawMessage Mensaje entrante del usuario.
+     * @returns {Promise<void>} Promesa que termina cuando los hechos se guardan.
      */
     async #processIncomingFacts(rawMessage) {
 
@@ -130,8 +177,10 @@ export class Memory {
     };
 
     /**
-     * Devuelve los hechos conocidos del usuario en formato adecuado para el prompt.
-     * @returns Arry
+     * Convierte los hechos conocidos al formato de mensaje para el prompt.
+     * Si no existen hechos, devuelve una lista vacia.
+     *
+     * @returns {Array<{role: string, content: string}>} Mensajes de contexto.
      */
     #getfactsForPrompt() {
         return( this.state.facts.length
@@ -148,8 +197,11 @@ export class Memory {
     };
 
     /**
-     * Devuelve el estado actual de la memoria del agente.
-     * @returns Estado actual de la memoria
+     * Devuelve una vista del contexto actual que puede usar el agente.
+     * Incluye mensajes, hechos formateados y un resumen por defecto cuando
+     * todavia no se ha generado ninguno.
+     *
+     * @returns {{messages: Array, facts: Array, summary: Array}} Contexto actual.
      */
     getState(){
         const sumaryMessage = this.state.summary?.length
@@ -164,7 +216,11 @@ export class Memory {
     };
 
     /**
-     * Se crea y modifica el resumen si hiciera falta.
+     * Resume los mensajes antiguos cuando se supera la ventana reciente.
+     * Conserva los ultimos {@link MAX_MESSAGES} mensajes y combina los
+     * anteriores con el resumen existente antes de reemplazarlos.
+     *
+     * @returns {Promise<void>} Promesa que termina cuando el resumen se actualiza.
      */
     async #updateSummaryIfNeeded(){
          if (this.state.messages.length > MAX_MESSAGES) {
@@ -192,8 +248,12 @@ export class Memory {
 
 
     /**
-     * Gestiona que hacer con el mensaje del usuario
-     * @param {*} message 
+     * Procesa un mensaje del usuario de principio a fin.
+     * Lo agrega a la conversacion, extrae sus hechos y actualiza el resumen
+     * si la cantidad de mensajes supera el limite configurado.
+     *
+     * @param {*} message Mensaje recibido del usuario.
+     * @returns {Promise<void>} Promesa que termina al completar el procesamiento.
      */
     async handlerUserInput(message) {
 
@@ -206,22 +266,41 @@ export class Memory {
 
     
     /**
-     *  Gestiona que hacer con la respuesta del agente.
-     * @param {*} response 
-     * @param {*} source 
+     * Guarda una respuesta del agente en la conversacion.
+     * El parametro `source` se acepta por compatibilidad, pero actualmente
+     * no modifica el mensaje almacenado.
+     *
+     * @param {*} response Respuesta generada por el agente.
+     * @param {string} [source='system'] Origen logico de la respuesta.
+     * @returns {void}
      */
     addAssistantResponse(response, source = 'system') {
         this.#addAssistantMessage(response);
     };
 
+    /**
+     * Obtiene los mensajes almacenados de la sesion.
+     *
+     * @returns {Array} Mensajes recientes de la conversacion.
+     */
     get messages() {
         return this.state.messages;
     };
 
+    /**
+     * Obtiene los hechos almacenados de la sesion.
+     *
+     * @returns {Array} Hechos conocidos del usuario.
+     */
     get facts() {
         return this.state.facts;
     };
 
+    /**
+     * Obtiene el resumen almacenado de la conversacion.
+     *
+     * @returns {Array} Mensajes que representan el resumen.
+     */
     get summary() {
         return this.state.summary;
     };

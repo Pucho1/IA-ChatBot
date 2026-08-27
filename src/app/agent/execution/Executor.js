@@ -1,15 +1,12 @@
 
+/** Ejecuta herramientas MCP y unifica sus resultados para el runtime. */
 export class Executor {
+    /** Guarda el administrador de clientes MCP usado para invocar herramientas. */
     constructor(mcpClientManager) {
         this.mcpClientManager = mcpClientManager;
     }
 
-    /**
-     *  Ejecuta una herramienta específica con los argumentos proporcionados.
-     * @param {*} step
-     * @param {*} syntheticId
-     * @returns
-     */
+    /** Ejecuta la herramienta indicada por un paso y captura sus errores. */
     async executeTool(step, syntheticId) {
 
         try {

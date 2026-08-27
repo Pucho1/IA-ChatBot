@@ -79,7 +79,7 @@ export async function POST(req) {
     memory,
   });
 
-  memory.handlerUserInput(messages);
+  await memory.handlerUserInput(messages);
 
   const agentResponse = await runtime.run(state);
 

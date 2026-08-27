@@ -1,5 +1,7 @@
+/** Mantiene los pasos de un plan y sus estados de ejecucion. */
 export class PlanGraph {
 
+  /** Inicializa los pasos y valida sus identificadores. */
   constructor(steps = []) {
     this.steps = steps.map(step => ({
       ...step,
@@ -11,9 +13,7 @@ export class PlanGraph {
     this.validate();
   };
 
-  /**
-   * Verifica el plan.
-   */
+  /** Verifica ids unicos y normaliza las dependencias. */
   validate() {
 
     const ids = new Set(); // permite almacenar valores únicos de cualquier tipo.
@@ -35,11 +35,7 @@ export class PlanGraph {
 
   };
 
-  /**
-   * Devuelve los pasos que tienen status = pending y todas sus dependencias están completadas.
-   * @param {*} plan 
-   * @returns Arry de pasos ejecutables.
-   */
+  /** Devuelve los pasos pendientes o bloqueados disponibles para ejecutar. */
   getExecutableSteps() {
 
     return this.steps.filter(step => {
@@ -66,10 +62,7 @@ export class PlanGraph {
 
   };
 
-  /**
-   * Marca a un step en proceso de ejecucion.
-   * @param {*} stepId id del paso.
-   */
+  /** Marca un paso como actualmente en ejecucion. */
   markRunning(stepId) {
 
     const step = this.#stepExist(stepId);
@@ -77,10 +70,7 @@ export class PlanGraph {
     step.status = "running";
   };
 
-  /**
-   * Marca a un step como ejecutado y guarda el resultado.
-   * @param {*} stepId id del paso.
-   */
+  /** Marca un paso como completado y guarda su resultado. */
   markCompleted(stepId, result) {
 
     const step = this.#stepExist(stepId);
@@ -90,11 +80,7 @@ export class PlanGraph {
     step.error = null;
   };
 
-  /**
-   * Marca a un step como fallido y guarda el por que.
-   * @param {*} stepId 
-   * @param {*} error 
-   */
+  /** Marca un paso como fallido y guarda el error. */
   markFailed(stepId, error) {
     const step = this.#stepExist(stepId);
 
@@ -102,11 +88,7 @@ export class PlanGraph {
     step.error = error;
   };
 
-  /**
-   * Marca a un step como bloqueado y guarda el por que.
-   * @param {*} stepId 
-   * @param {*} error 
-   */
+  /** Marca un paso como bloqueado y registra la razon. */
   markBlocked(stepId, blokedReazon) {
     const step = this.#stepExist(stepId);
 
@@ -114,47 +96,34 @@ export class PlanGraph {
     step.error = `El paso actual tiene el problema en: ${blokedReazon}`;
   };
 
-  /**
-   * Marca a un step en pendiente de ejecucion.
-   * @param {*} stepId 
-   * @param {*} error 
-   */
+  /** Devuelve un paso bloqueado al estado pendiente. */
   markPending(stepId) {
     const step = this.#stepExist(stepId);
 
     step.status = "pending";
   };
 
-  /**
-   * Verifico que todos los pasos esten completados.
-   * @returns boolean
-   */
+  /** Indica si todos los pasos estan completados. */
   isComplete() {
     return this.steps.every(step =>
       step.status === "completed"
     );
   };
 
-  /**
-   * Verifico si algun paso ha fallado.
-   * @returns boolean
-   */
+  /** Indica si algun paso ha fallado. */
   hasFailures() {
     return this.steps.some(step =>
       step.status === "failed"
     );
   };
 
+  /** Actualiza los argumentos de un paso existente. */
   updateStepArgs(stepId, newArgs) {
     const step = this.#stepExist(stepId);
     step.args = newArgs;
   };
 
-  /**
-   * Verifica si un step existe.
-   * @param {*} stepId id del step.
-   * @returns El step en cuestion.
-   */
+  /** Obtiene un paso por id o lanza un error si no existe. */
   #stepExist (stepId) {
     const step = this.steps.find(s => s.id === stepId);
 

@@ -74,9 +74,6 @@ export class AgentRuntime {
             state,
         });
 
-        console.log("interpretacion de ResolverReference =======>", reference );
-        console.log("Resultado del TransitionResolver =======>", transition );
-
         if (transition.type === "SELECT_OPTION") {
             state.context.selected = reference.value;
             state.context.skipSearch = true;
@@ -84,15 +81,8 @@ export class AgentRuntime {
         };
 
 
-        console.log("interpretacion de la intencion del usuario segun el clasificador =======>", interpretation );
-        console.log("Routing decision:", route);
-        console.log("Estado inicial del agente:", state);
-
-
         // 🔹 Reseteo el plan ya que he cambiado de Goal
         if (transition.shouldResetGoal) {
-            console.log("Detectado cambio de objetivo. Limpiando plan anterior...");
-
             state.goal = state.currentInput; // El nuevo input es el nuevo norte
             state.planGraph = null;          // Forzamos al Engine a crear un plan nuevo
             state.status = "idle";           // Volvemos al estado inicial de planificación
@@ -164,12 +154,7 @@ export class AgentRuntime {
                 const hasRequirements = capabilities.required && capabilities.required.length > 0;
                 const nothingMissing = !capabilities.missing || capabilities.missing.length === 0;
 
-                console.log("----Verificación de capacidades para el goal actual -----", capabilities);
-
                 if (hasRequirements && nothingMissing) {
-
-                    console.log("No missing capabilities → skipping planning");
-
                     state.status = "completed";
 
                     const output = await this.engine.generateFinalAnswer({
@@ -198,13 +183,8 @@ export class AgentRuntime {
                     capabilities,
                 });
 
-                console.log("Plan generado:", plan);
-
                 // 🔴 VALIDACIÓN CRÍTICA ---> adicionar capa de validacion para el plan generado.
                 if (plan.steps.length === 0) {
-
-                    console.log("Plan inválido: se requieren tools");
-
                     state.isReplanning = true;
 
                     // OPCIÓN 1 (simple)
@@ -235,8 +215,6 @@ export class AgentRuntime {
              */
             const executableSteps = state.planGraph.getExecutableSteps();
 
-            console.log("estos son los pasos ejecutables que tengo de mi plan ==============>>>>", {executableSteps})
-
             /**
              * 3️⃣ Si no hay pasos ejecutables
              */
@@ -249,12 +227,7 @@ export class AgentRuntime {
 
                     const verification  = await this.goalVerifier.verify({ state });
 
-                    console.log("----Goal verification -----", {verification});
-                    
-
                     if (verification.success ) {
-
-                        console.log("!!!----Goal verificado como cumplido. Finalizando agente...-----!!!", {verification});
                         state.status = "completed";
 
                         // Como no tengo mas pasos y el el plan esta completado genero respuesta final.
@@ -263,9 +236,6 @@ export class AgentRuntime {
                             history: state.history,
                             state,
                         });
-
-                        console.log("esta es la rtespuesta final del agente------>", output);
-
 
                         const record = this.#createStepRecord(
                             state,
@@ -283,7 +253,6 @@ export class AgentRuntime {
                      */
                     state.planGraph = null;
                     state.isReplanning = true;
-                    console.log(" ⚠️⚠️⚠️ Plan completo pero goal NO cumplido → REPLAN ⚠️⚠️⚠️");
                     continue;
                 };
 
@@ -320,8 +289,6 @@ export class AgentRuntime {
                 // me sercioro de que todos los argumentos necesarios para que se ejecute la herramienta esten.
                 const guardResult = this.missingInfoGuard.check({ args: normalizedArgs, schema  });
 
-                console.log("argumento de detect missing fields======>>>>>", { guardResult })
-
                 // que no este ninguno vacio y como no vuelvo a generar el plan tengo que buscar dentro de mi contexto qu debe incluir 
                 // lo nuevo escrito por el user 
                 const { resolvedArgs, missingFields } = await this.argumentResolver.resolve({
@@ -330,8 +297,6 @@ export class AgentRuntime {
                     state,
                     memory: this.memory,
                 });
-
-                console.log("argumento resuletos y campos faltantes =======>", {resolvedArgs}, {missingFields})
 
                 if(resolvedArgs){
                     step.args = resolvedArgs;
@@ -395,8 +360,6 @@ export class AgentRuntime {
                         };
                     }
                 };
-
-                console.log("este es el resultado de ejecutar la erramienta o el resultado si fallo algo dentro de los parametro necesarios para ello =====>", observation);
 
                 let shouldStopExecution = false;
                 
@@ -511,8 +474,6 @@ export class AgentRuntime {
     buildResponse(state, response) {
         const duration  = state.finishedAt - state.startedAt; // Es vital para telemetría y saber si tu agente es lento.
         const lastStep = state.history[state.history.length - 1];
-
-        console.log("Estado final del agente:", {state}, {lastStep}, {response});
 
         const output = this.#handleOutput(response, state, lastStep);
             

@@ -1,10 +1,7 @@
+/** Extrae preferencias y las convierte en instrucciones de prompt. */
 export class BehaviorManager {
 
-    /**
-     * Punto de entrada principal
-     * - Extrae reglas del input
-     * - Las guarda en el state
-     */
+    /** Extrae y guarda las reglas detectadas en el estado. */
     process(input, state) {
         if (!state.behaviorRules) {
             state.behaviorRules = {
@@ -29,9 +26,7 @@ export class BehaviorManager {
 
     };
 
-    /**
-     * 🔍 Extrae reglas del input (heurístico, sin LLM)
-     */
+    /** Extrae reglas mediante heuristicas, sin usar el LLM. */
     #extractRules(input) {
         const structured = [];
         const raw = [];
@@ -63,9 +58,7 @@ export class BehaviorManager {
         return { structured, raw };
     };
 
-    /**
-     * 🧠 Convierte reglas a instrucciones para el prompt
-     */
+    /** Convierte las reglas guardadas en instrucciones para el prompt. */
     buildPromptInstructions(state) {
 
         console.log("state.behaviorRules en buildPromptInstructions -------->>>>>>", state?.behaviorRules);

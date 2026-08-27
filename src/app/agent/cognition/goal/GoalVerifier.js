@@ -71,7 +71,17 @@ const DEFAULT_CAPABILITY_CHECKS = {
 
 
 
+/**
+ * Comprueba si el estado del agente satisface las capacidades requeridas por
+ * su objetivo, usando reglas configurables y resultados de herramientas.
+ */
 export class GoalVerifier {
+    /**
+     * Configura las comprobaciones de capacidades y las reglas que relacionan
+     * objetivos con capacidades. Las opciones recibidas amplian o reemplazan
+     * las comprobaciones predeterminadas.
+     * @param {object} options Configuracion opcional del verificador.
+     */
     constructor({
         capabilityChecks = {},
         goalCapabilityRules = DEFAULT_GOAL_CAPABILITY_RULES,
@@ -86,9 +96,7 @@ export class GoalVerifier {
         this.registry = registry;
     }
 
-    /**
-     * Verifica si el goal se ha cumplido
-     */
+    /** Verifica el objetivo y devuelve si se cumple junto a sus faltantes. */
     async verify({ state }) {
         const capabilities = this.#getRequiredCapabilities(state);
 
@@ -103,9 +111,7 @@ export class GoalVerifier {
         return this.#checkCapabilities(capabilities, state);
     }
 
-    /**
-     * Devuelve capacidades requeridas para el goal
-     */
+    /** Obtiene capacidades explicitas o inferidas a partir del objetivo. */
     #getRequiredCapabilities(state) {
         if (Array.isArray(state.requiredCapabilities)) {
             return this.#unique(state.requiredCapabilities);
@@ -122,9 +128,7 @@ export class GoalVerifier {
         return this.#unique(capabilities);
     }
 
-    /**
-     * Evalúa todas las capacidades
-     */
+    /** Evalua todas las capacidades y recopila las que aun no se cumplen. */
     #checkCapabilities(capabilities, state) {
         const results = capabilities.map(capability => ({
             capability,
@@ -146,9 +150,7 @@ export class GoalVerifier {
         };
     }
 
-    /**
-     * Evalúa una sola capability
-     */
+    /** Comprueba una capacidad con su regla o mediante capacidades del registry. */
     #checkSingle(capability, state) {
         const check = this.capabilityChecks[capability];
 
@@ -169,9 +171,7 @@ export class GoalVerifier {
         ) ?? false;
     }
 
-    /**
-     * API pública para planner/runtime
-     */
+    /** Expone las capacidades requeridas y las que faltan para el planner. */
     capabilitiesStatus(state) {
         const required = this.#getRequiredCapabilities(state);
 
@@ -190,13 +190,12 @@ export class GoalVerifier {
         };
     }
 
-    /**
-     * Utils
-     */
+    /** Elimina valores vacios y capacidades duplicadas. */
     #unique(items) {
         return [...new Set(items.filter(Boolean))];
     }
 
+    /** Normaliza un objetivo para compararlo con las reglas configuradas. */
     #normalizeText(text) {
         return String(text || "")
             .toLowerCase()

@@ -1,9 +1,12 @@
+/** Extrae argumentos directamente de la entrada actual del usuario. */
 export class InputResolver {
 
+  /** Indica si existe una entrada actual que analizar. */
   canResolve(field, context) {
     return !!context.currentInput;
   };
 
+  /** Busca el valor usando el nombre y la descripcion del campo. */
   resolve(field, context) {
     const { currentInput, schema } = context;
     const fieldSchema = schema.shape[field];
@@ -28,6 +31,7 @@ export class InputResolver {
   // 🔹 HINTS GENERATION
   // -------------------------
 
+  /** Genera pistas a partir del campo y su descripcion. */
   getFieldHints(field, fieldSchema) {
     const description = fieldSchema.description?.toLowerCase() || "";
 
@@ -41,6 +45,7 @@ export class InputResolver {
   // 🔹 GENERIC EXTRACTION
   // -------------------------
 
+  /** Extrae la palabra que aparece despues de una pista. */
   extractByHint(text, hint) {
     if (!hint) return null;
 
@@ -51,6 +56,7 @@ export class InputResolver {
     return match ? this.capitalize(match[1]) : null;
   };
 
+  /** Capitaliza la primera letra de un valor extraido. */
   capitalize(word) {
     if (!word) return word;
     return word.charAt(0).toUpperCase() + word.slice(1);

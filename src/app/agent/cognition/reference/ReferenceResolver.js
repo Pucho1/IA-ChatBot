@@ -1,5 +1,27 @@
+/**
+ * Resuelve referencias del usuario hacia opciones obtenidas previamente.
+ *
+ * Permite interpretar expresiones ordinales como "el primero", "el segundo"
+ * o "el tercero", además de referencias al ultimo elemento de una lista.
+ * Las opciones se leen desde `state.context.options`.
+ */
 export class ReferenceResolver {
 
+    /**
+     * Busca una referencia en la entrada del usuario y la vincula con una
+     * opcion almacenada en el contexto de la sesion.
+     *
+     * Si no existe historial, no se reconoce un ordinal o no hay opciones
+     * disponibles, devuelve `null`. Cuando encuentra una opcion, conserva los
+     * datos del resultado y establece `entity` en `"unknown"`.
+     *
+     * @param {object} params Parametros de resolucion.
+     * @param {string} params.input Texto recibido del usuario.
+     * @param {object} params.state Estado actual del agente.
+     * @param {Array} [params.state.history] Historial de interacciones.
+     * @param {object} [params.state.context] Contexto de la sesion.
+     * @returns {object|null} Referencia resuelta o `null` si no se pudo resolver.
+     */
     resolve({ input, state }){
 
         if (state?.history?.length === 0) { // No hay historia, no se puede resolver referencia
@@ -28,10 +50,16 @@ export class ReferenceResolver {
 
 
     /**
-     *  Busca en el estado el último resultado de herramienta que contenga una lista de opciones,
-     *  que es lo que necesito para resolver referencias como "el primero", "el segundo", etc.
-     * @param {*} state 
-     * @returns 
+     * Obtiene una opcion de la lista almacenada en el contexto.
+     *
+     * El índice `0`, `1` y `2` representa respectivamente la primera,
+     * segunda y tercera opcion. El índice `-1` representa la ultima opcion.
+     * Si no existen opciones, no devuelve ningun resultado.
+     *
+     * @param {object} state Estado actual del agente.
+     * @param {number} index Índice de la opcion solicitada.
+     * @returns {{type: "selection", value: *}|undefined} Resultado de seleccion
+     *   o `undefined` cuando el contexto no contiene opciones.
      */
     #lastToolResult(state, index) {
 

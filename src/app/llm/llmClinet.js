@@ -1,5 +1,4 @@
 import OpenAI from "openai";
-// import { debug } from "@/app/agent/debug/debug";
 
 
 // Inicializo el cliente de OpenAI creando una instancia de la clase OpenAI
@@ -10,7 +9,26 @@ const client = new OpenAI({
     baseURL: "https://api.deepseek.com",
 });
 
+/**
+ * Crea las operaciones de comunicacion con el modelo DeepSeek mediante la
+ * interfaz compatible de OpenAI. Devuelve una operacion para respuestas
+ * completas y otra para respuestas en streaming.
+ *
+ * @returns {{complete: Function, Stream: Function}} Cliente con las operaciones
+ *   disponibles para completar conversaciones.
+ */
 export function llmClient() {
+    /**
+     * Solicita una respuesta completa al modelo.
+     *
+     * Si se proporcionan herramientas, configura la llamada para tool calling
+     * y usa temperatura cero. Con `format: "json_object"` solicita una respuesta
+     * JSON y limita su longitud a 500 tokens.
+     *
+     * @param {{messages: Array, temperature: number, format?: string,
+     *   tools?: Array, toolChoice?: object|string}} params Configuracion de la llamada.
+     * @returns {Promise<object>} Respuesta de `chat.completions.create`.
+     */
     async function complete ({ messages, temperature, format, tools, toolChoice }){
 
         const config = {
@@ -33,17 +51,17 @@ export function llmClient() {
             }
         };
 
-        console.log("esto es lo que envio ---------->", config)
-        // debug.log("[llmClient] completion config", config);
-
         return await client.chat.completions.create(config);
     };
 
 
+    /**
+     * Inicia una respuesta en streaming para recibir el contenido por partes.
+     *
+     * @param {{messages: Array, temperature: number}} params Mensajes y temperatura.
+     * @returns {Promise<object>} Stream devuelto por la API de chat.
+     */
     async function Stream ({ messages, temperature }){
-        // debug.log("[llmClient] stream messages", messages);
-
-        console.log("Building prompt with messages: ---------?????", messages);
 
         return await client.chat.completions.create({
             model: "deepseek-v4-flash",

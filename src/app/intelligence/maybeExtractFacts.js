@@ -1,6 +1,16 @@
 import { llmClient } from "../llm/llmClinet";
 
-
+/**
+ * Extrae del mensaje los hechos estables que puedan asociarse al usuario.
+ *
+ * Solicita al LLM una respuesta JSON con una propiedad `facts`, analiza esa
+ * respuesta y devuelve unicamente la lista de hechos encontrados. Cada hecho
+ * debe incluir una clave, un valor y un nivel de confianza entre 0 y 1.
+ *
+ * @param {string} message Mensaje del usuario que se analizara.
+ * @returns {Promise<Array>} Hechos candidatos extraidos del mensaje.
+ * @throws {Error} Si el LLM falla o su respuesta no contiene JSON valido.
+ */
 export async function maybeExtractFacts(message) {
 
 	const promptMessage= [
@@ -22,12 +32,10 @@ export async function maybeExtractFacts(message) {
  	const response = await llmClient().complete({ messages: promptMessage, temperature: 0, format: "json_object" });
 
 	const responseFactCandidate = response.choices[0].message.content;
-	const factCandidate = JSON.parse(responseFactCandidate); // <-- Aquí se parsea la respuesta JSON del modelo para obtener 
-	// los hechos candidatos ya que el modelo devuelve un formato json pero en string
+	const factCandidate = JSON.parse(responseFactCandidate);
+	// La respuesta del modelo llega como texto; aqui se convierte en datos utilizables.
 
 
-	console.log("Fact candidate:", factCandidate, );
-
-	return [...factCandidate.facts]; // Devuelvo solo la lista de hechos extraídos del objeto JSON parseado
+	return [...factCandidate.facts]; // Se expone solo la lista, no el envoltorio JSON.
 
 };
